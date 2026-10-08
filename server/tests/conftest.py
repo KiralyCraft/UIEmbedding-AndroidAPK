@@ -1,9 +1,11 @@
 import base64
 import json
+import os
 import struct
 import uuid
 
 import pytest
+from sqlalchemy.engine import make_url
 from fastapi.testclient import TestClient
 from collector.api import create_app
 from collector.config import Settings
@@ -13,8 +15,15 @@ from collector.security import issue_token, password_hash
 
 @pytest.fixture
 def system(tmp_path):
-    app = create_app(Settings(database_url=f"sqlite:///{tmp_path / 'test.db'}", login_failure_limit=3))
+    database_url = os.environ.get("TEST_DATABASE_URL", f"sqlite:///{tmp_path / 'test.db'}")
+    if not database_url.startswith("sqlite"):
+        assert make_url(database_url).database.endswith("_test"), "Use an isolated database ending in _test"
+    app = create_app(Settings(database_url=database_url, login_failure_limit=3))
     Base.metadata.create_all(app.state.engine)
+    if not database_url.startswith("sqlite"):
+        with app.state.engine.begin() as connection:
+            for table in reversed(Base.metadata.sorted_tables):
+                connection.execute(table.delete())
     owner = str(uuid.uuid4())
     other = str(uuid.uuid4())
     model_id = "a" * 64

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>UI Embeddings · Collector</title>
+    <link rel="stylesheet" href="assets/admin.css" />
+    <script defer src="assets/admin.js"></script>
+  </head>
+  <body>
+    <section id="signin" class="signin">
+      <div class="brand">UI<span>Embeddings</span></div>
+      <h1>Capture, accounted for.</h1>
+      <p>
+        Sign in to manage participants and follow collection across their
+        devices.
+      </p>
+      <form id="login">
+        <label
+          >Username<input
+            name="username"
+            autocomplete="username"
+            required /></label
+        ><label
+          >Password<input
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required /></label
+        ><button>Sign in</button>
+      </form>
+    </section>
+    <div id="dashboard" hidden>
+      <aside>
+        <div class="brand">UI<span>Embeddings</span></div>
+        <p class="eyebrow">COLLECTION CONSOLE</p>
+        <nav>
+          <button data-page="overview" class="selected">Overview</button
+          ><button data-page="people">People &amp; devices</button>
+        </nav>
+        <div class="account">
+          <span id="identity"></span
+          ><button id="logout" class="secondary">Sign out</button>
+        </div>
+      </aside>
+      <main>
+        <header>
+          <div>
+            <p class="eyebrow">ANDROID CAPTURE</p>
+            <h1 id="page-title">Overview</h1>
+          </div>
+          <button id="refresh" class="secondary">Refresh</button>
+        </header>
+        <p id="updated" class="muted"></p>
+        <section id="overview">
+          <div id="totals" class="totals"></div>
+          <article>
+            <h2>Collection activity</h2>
+            <p>
+              Uploads are grouped by participant and device. Counts include
+              every committed embedding; complete runs have received all
+              expected samples.
+            </p>
+            <div id="activity"></div>
+          </article>
+          <article>
+            <h2>Connect an Android device</h2>
+            <p>
+              Create a participant account under People &amp; devices, then sign
+              in from the collector's server menu. Use the same account on
+              multiple phones; each installation is tracked separately.
+            </p>
+            <label>Server address<input id="server-address" readonly /></label>
+            <p class="muted">
+              Last upload shows server receipt time, not whether a phone is
+              currently recording. Reinstalling the app creates a new device
+              identity.
+            </p>
+          </article>
+        </section>
+        <section id="people" hidden>
+          <div class="toolbar">
+            <p>Manage access and inspect each device independently.</p>
+            <button id="add-user">Create user</button>
+          </div>
+          <div id="user-list"></div>
+        </section>
+        <section id="device-page" hidden>
+          <button id="back" class="secondary">← All people</button>
+          <div id="devices"></div>
+        </section>
+      </main>
+    </div>
+    <div id="notice" role="status" hidden></div>
+    <dialog id="user-dialog">
+      <form id="new-user">
+        <h2>Create participant</h2>
+        <label
+          >Username<input
+            name="username"
+            pattern="[a-zA-Z0-9_.-]{1,128}"
+            autocomplete="off"
+            required /></label
+        ><label
+          >Password <small>At least 12 characters</small
+          ><input
+            name="password"
+            type="password"
+            minlength="12"
+            maxlength="1024"
+            autocomplete="new-password"
+            required
+        /></label>
+        <div class="actions">
+          <button type="button" data-close="user-dialog" class="secondary">
+            Cancel</button
+          ><button>Create user</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="password-dialog">
+      <form id="reset-password">
+        <h2>Reset password</h2>
+        <p id="reset-for"></p>
+        <label
+          >New password<input
+            name="password"
+            type="password"
+            minlength="12"
+            maxlength="1024"
+            autocomplete="new-password"
+            required
+        /></label>
+        <p class="muted">
+          All sessions will be revoked. The participant must sign in again on
+          every device.
+        </p>
+        <div class="actions">
+          <button type="button" data-close="password-dialog" class="secondary">
+            Cancel</button
+          ><button>Reset password</button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>

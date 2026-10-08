@@ -1,0 +1,21 @@
+#!/usr/sbin/nft -f
+# Dedicated fresh VM only. VMRISK peers communicate directly at layer 2.
+flush ruleset
+table inet filter {
+    chain input {
+        type filter hook input priority 0; policy drop;
+        iifname "lo" accept
+        ct state established,related accept
+        ct state invalid drop
+        ip protocol icmp accept
+        ip6 nexthdr ipv6-icmp accept
+        ip saddr { 192.168.0.0/24, 192.168.5.0/24 } tcp dport 22 accept
+        ip saddr 192.168.2.67 tcp dport 8000 accept
+    }
+    chain forward {
+        type filter hook forward priority 0; policy drop;
+    }
+    chain output {
+        type filter hook output priority 0; policy accept;
+    }
+}

@@ -1,0 +1,28 @@
+[Unit]
+Description=UI Embeddings capture API and administration
+Requires=mariadb.service
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=uiembeddings
+Group=uiembeddings
+WorkingDirectory=/opt/uiembeddings/server
+EnvironmentFile=/etc/uiembeddings/server.env
+ExecStart=/opt/uiembeddings/venv/bin/uvicorn collector.api:create_app --factory --host 0.0.0.0 --port 8000 --workers 2 --proxy-headers --forwarded-allow-ips 192.168.2.67 --no-access-log
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/lib/uiembeddings
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+<Location /projects/uiembeddings>
+         ProxyPass http://192.168.2.75:8000/projects/uiembeddings
+         ProxyPassReverse http://192.168.2.75:8000/projects/uiembeddings
+         ProxyPreserveHost On
+         RequestHeader set "X-Forwarded-Proto" expr=%{REQUEST_SCHEME}
+</Location>

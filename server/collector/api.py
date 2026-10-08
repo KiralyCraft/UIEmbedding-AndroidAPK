@@ -13,7 +13,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from .config import Settings
-from .db import Application, Benchmark, Encoder, LoginFailure, Run, Sample, Token, User, database
+from .db import Application, Benchmark, Device, Encoder, LoginFailure, Run, Sample, Token, User, database
 from .schemas import BenchmarkReport, Ingest, Login
 from .security import authenticate, digest, issue_token, now_ms, password_hash, verify_password
 
@@ -56,11 +56,15 @@ class BodyLimit:
 def create_app(settings: Settings | None = None) -> FastAPI:
     config = settings or Settings.from_environment()
     engine, sessions = database(config.database_url)
-    app = FastAPI(title="UI Embedding Collector", version="1.0.0")
+    app = FastAPI(title="UI Embedding Collector", version="1.1.0", root_path=config.root_path)
     app.state.engine = engine
     app.state.sessions = sessions
     app.add_middleware(BodyLimit, limit=config.max_body_bytes)
     dummy_hash = password_hash("a-dummy-password-never-used-to-login")
+
+    def login_guard(request: Request) -> None:
+        from .throttle import enforce_login_limit
+        enforce_login_limit(request, config, sessions)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(_request, exc):
@@ -79,19 +83,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/healthz")
     def health():
+        try:
+            with sessions() as session:
+                session.execute(select(1))
+        except OperationalError as exc:
+            raise HTTPException(503, "Database temporarily unavailable") from exc
         return {"status": "ok"}
 
-    @app.post("/v1/auth/login")
+    @app.post("/v1/auth/login", dependencies=[Depends(login_guard)])
     def login(body: Login, request: Request):
         username = body.username.strip().lower()
         key = digest(username)
         cutoff = now_ms() - config.login_window_seconds * 1000
         with sessions.begin() as session:
             session.execute(delete(LoginFailure).where(LoginFailure.time_ms < cutoff))
+            # Serialize password checks for an existing account across workers/IPs.
+            user = session.scalar(select(User).where(User.username == username).with_for_update())
             failures = session.scalar(select(func.count()).select_from(LoginFailure).where(LoginFailure.key == key))
             if failures >= config.login_failure_limit:
                 raise HTTPException(429, "Too many failed sign-ins; retry later", headers={"Retry-After": str(config.login_window_seconds)})
-            user = session.scalar(select(User).where(User.username == username))
             valid = verify_password(user.password_hash if user is not None else dummy_hash, body.password)
             if user is None or valid is False or user.active is False:
                 session.add(LoginFailure(key=key, time_ms=now_ms()))
@@ -143,16 +153,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     row.pop(field, None)
         text = canonical(document)
         signature = digest(text)
-        with sessions.begin() as session:
-            encoder = session.get(Encoder, body.model_id)
-            if encoder is None or encoder.active is False:
-                raise HTTPException(409, "Model must be registered by the server administrator")
-            old = session.get(Benchmark, str(body.id))
-            if old is not None:
-                if old.user_id != owner or old.payload_sha256 != signature:
-                    raise HTTPException(409, "Benchmark ID collision")
-            else:
-                session.add(Benchmark(id=str(body.id), user_id=owner, device_id=str(body.device_id), model_id=body.model_id, payload_sha256=signature, report_json=text, received_ms=now_ms()))
+        for attempt in range(4):
+            try:
+                with sessions.begin() as session:
+                    encoder = session.get(Encoder, body.model_id)
+                    if encoder is None or encoder.active is False:
+                        raise HTTPException(409, "Model must be registered by the server administrator")
+                    old = session.get(Benchmark, str(body.id))
+                    if old is not None:
+                        if old.user_id != owner or old.payload_sha256 != signature:
+                            raise HTTPException(409, "Benchmark ID collision")
+                    else:
+                        session.add(Benchmark(id=str(body.id), user_id=owner, device_id=str(body.device_id), model_id=body.model_id, payload_sha256=signature, report_json=text, received_ms=now_ms()))
+                    touch_device(session, owner, str(body.device_id))
+                break
+            except (IntegrityError, OperationalError) as exc:
+                if attempt == 3:
+                    raise HTTPException(503, "Concurrent write conflict; retry unchanged report") from exc
         return {"id": str(body.id), "committed": True}
 
     @app.get("/v1/runs")
@@ -175,7 +192,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             rows = session.scalars(select(Sample).where(Sample.run_id == str(run_id), Sample.sequence > after).order_by(Sample.sequence).limit(limit))
             return [{**json.loads(row.metadata_json), "embedding_b64": base64.b64encode(row.embedding).decode("ascii")} for row in rows]
 
+    from .admin import install_admin
+    install_admin(app, config, sessions, login, login_guard)
     return app
+
+
+def touch_device(session, owner: str, device_id: str, model: str = "", android_sdk: int | None = None) -> None:
+    device = session.get(Device, (owner, device_id))
+    if device is None:
+        device = Device(user_id=owner, id=device_id, first_seen_ms=now_ms(), last_seen_ms=now_ms())
+        session.add(device)
+    elif not device.active:
+        raise HTTPException(403, "This device is disabled; contact the administrator")
+    if model:
+        device.model = model
+    if android_sdk is not None:
+        device.android_sdk = android_sdk
+    device.last_seen_ms = now_ms()
 
 
 def store_batch(session, body: Ingest, owner: str) -> dict:
@@ -183,6 +216,7 @@ def store_batch(session, body: Ingest, owner: str) -> dict:
     model = session.get(Encoder, body.run.model_id)
     if model is None or model.active is False or model.dimension != 384:
         raise HTTPException(409, "Register this 384-dimensional model before uploading")
+    touch_device(session, owner, str(body.run.device_id), body.run.device_model, body.run.android_sdk)
     run = session.scalar(select(Run).where(Run.id == str(body.run.id)).with_for_update())
     if run is None:
         application = session.scalar(select(Application).where(Application.user_id == owner, Application.device_id == str(body.run.device_id), Application.package_name == body.run.package_name).with_for_update())

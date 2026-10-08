@@ -59,6 +59,8 @@ The controlled capture helper grants only collector prerequisites, preserves oth
 
 ## Optional server
 
+The deployed administrator console and capture endpoint are [kiralycraft.com/projects/uiembeddings](https://kiralycraft.com/projects/uiembeddings/). See [deployment and administration](docs/SERVER_DEPLOYMENT.md) for the Debian VM, user/device management, operations and validation.
+
 ```bash
 cp .env.example .env
 # Set independent MYSQL_PASSWORD and MYSQL_ROOT_PASSWORD secrets.
@@ -66,7 +68,7 @@ cp .env.example .env
 docker compose exec api python -m collector.cli create-user alex
 ```
 
-Docker Compose starts MySQL 8.4 and FastAPI behind `127.0.0.1:8000`; terminate HTTPS at your reverse proxy using `docs/nginx.conf`. Set `TRUSTED_PROXY_IPS` to the exact proxy source. The phone requires HTTPS, normal certificate validation and no redirects. MySQL is not publicly published. Real proxy/MySQL integration is a separate deployment acceptance step.
+Docker Compose starts MySQL 8.4 and FastAPI behind `127.0.0.1:8000`; terminate HTTPS at your reverse proxy using `docs/nginx.conf`. Set `TRUSTED_PROXY_IPS` to the exact proxy source. The phone requires HTTPS, normal certificate validation and no redirects. MySQL is not publicly published. The native deployment has also been verified through the public Apache proxy and local MariaDB; see the deployment report above.
 
 In Settings → Server and account, sign in to an upload destination. Existing local recordings remain local until you explicitly confirm their transfer. Transfer decrypts/reseals ownership-bound data atomically and refuses active runs or insufficient space. Account-bound data cannot be rebound to another account. Server tokens expire/revoke without deleting the phone queue.
 

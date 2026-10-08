@@ -10,7 +10,7 @@ import numpy as np
 from sqlalchemy import delete, select
 from .api import canonical
 from .config import Settings
-from .db import Base, Encoder, Run, Sample, Token, User, database
+from .db import Administrator, Base, Encoder, LoginRateLimit, Run, Sample, Token, User, database
 from .security import password_hash
 
 
@@ -45,8 +45,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="UI Embedding Collector administration")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("init-db", help="Create initial schema; do not use for future schema upgrades")
+    commands.add_parser("upgrade-rate-limits", help="Add persistent shared login rate limits without changing existing records")
     add = commands.add_parser("create-user")
     add.add_argument("username")
+    add.add_argument("--admin", action="store_true")
     reset = commands.add_parser("reset-password")
     reset.add_argument("username")
     revoke = commands.add_parser("revoke-sessions")
@@ -59,6 +61,10 @@ def main() -> None:
     export.add_argument("--package")
     args = parser.parse_args()
     engine, sessions = database(Settings.from_environment().database_url)
+    if args.command == "upgrade-rate-limits":
+        LoginRateLimit.__table__.create(engine, checkfirst=True)
+        print("Login rate-limit table ready")
+        return
     if args.command == "init-db":
         Base.metadata.create_all(engine)
         print("Schema v1 created")
@@ -87,7 +93,11 @@ def main() -> None:
             password = getpass.getpass("Password (12+ characters): ")
             if password != getpass.getpass("Repeat password: "):
                 raise ValueError("Passwords differ")
-            session.add(User(id=str(uuid.uuid4()), username=username, password_hash=password_hash(password), active=True))
+            user = User(id=str(uuid.uuid4()), username=username, password_hash=password_hash(password), active=True)
+            session.add(user)
+            session.flush()
+            if args.admin:
+                session.add(Administrator(user_id=user.id))
             print(f"Created {username}")
         elif args.command in ("reset-password", "revoke-sessions"):
             if user is None:

@@ -23,11 +23,35 @@ class Token(Base):
     expires_ms: Mapped[int] = mapped_column(BigInteger)
 
 
+class Administrator(Base):
+    __tablename__ = "administrators"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+
+
+class Device(Base):
+    __tablename__ = "devices"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    label: Mapped[str] = mapped_column(String(128), default="")
+    model: Mapped[str] = mapped_column(String(128), default="")
+    android_sdk: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    first_seen_ms: Mapped[int] = mapped_column(BigInteger)
+    last_seen_ms: Mapped[int] = mapped_column(BigInteger)
+
+
 class LoginFailure(Base):
     __tablename__ = "login_failures"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     key: Mapped[str] = mapped_column(String(64), index=True)
     time_ms: Mapped[int] = mapped_column(BigInteger, index=True)
+
+
+class LoginRateLimit(Base):
+    __tablename__ = "login_rate_limits"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    attempts: Mapped[int] = mapped_column(Integer)
+    expires_ms: Mapped[int] = mapped_column(BigInteger, index=True)
 
 
 class Encoder(Base):
@@ -50,7 +74,7 @@ class Application(Base):
 
 class Run(Base):
     __tablename__ = "runs"
-    __table_args__ = (UniqueConstraint("application_id", "run_number", name="uq_application_run_number"),)
+    __table_args__ = (UniqueConstraint("application_id", "run_number", name="uq_application_run_number"), Index("ix_runs_owner_device_updated", "user_id", "device_id", "updated_ms"))
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     application_id: Mapped[str] = mapped_column(ForeignKey("applications.id"), index=True)
@@ -83,6 +107,7 @@ class Sample(Base):
 
 class Benchmark(Base):
     __tablename__ = "benchmarks"
+    __table_args__ = (Index("ix_benchmarks_owner_device_received", "user_id", "device_id", "received_ms"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     device_id: Mapped[str] = mapped_column(String(36))

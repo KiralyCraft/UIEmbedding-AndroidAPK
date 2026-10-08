@@ -1,0 +1,359 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color: #182b3b;
+  background: #f4f6f8;
+  font-synthesis: none;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+input {
+  font: inherit;
+}
+button {
+  border: 0;
+  border-radius: 8px;
+  background: #176956;
+  color: white;
+  padding: 11px 17px;
+  cursor: pointer;
+  font-weight: 600;
+}
+button:hover {
+  filter: brightness(0.94);
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid #59baa1;
+  outline-offset: 3px;
+}
+button.secondary {
+  background: #eaf0f3;
+  color: #234356;
+}
+button.danger {
+  background: #fbe9e6;
+  color: #9b3222;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+input {
+  display: block;
+  width: 100%;
+  border: 1px solid #c9d5de;
+  background: white;
+  padding: 12px;
+  border-radius: 8px;
+  color: inherit;
+  margin: 7px 0 18px;
+}
+label {
+  font-size: 14px;
+  font-weight: 600;
+}
+label small {
+  color: #667985;
+  font-weight: 400;
+}
+h1 {
+  font-size: 32px;
+  letter-spacing: -1px;
+  margin: 8px 0 16px;
+}
+h2 {
+  font-size: 19px;
+  margin: 0 0 14px;
+}
+p {
+  line-height: 1.6;
+  color: #526675;
+}
+aside {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 245px;
+  background: #102e3d;
+  color: #e4f0f1;
+  padding: 35px 24px;
+  display: flex;
+  flex-direction: column;
+}
+aside .eyebrow {
+  color: #9bb9c2;
+  margin-top: 38px;
+}
+.brand {
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: -0.6px;
+}
+.brand span {
+  font-weight: 400;
+  color: #4da38e;
+}
+nav {
+  display: grid;
+  gap: 10px;
+}
+nav button {
+  text-align: left;
+  background: transparent;
+  color: #d5e2e7;
+}
+nav button.selected {
+  background: #244958;
+}
+.account {
+  margin-top: auto;
+  display: grid;
+  gap: 15px;
+  font-size: 14px;
+}
+main {
+  margin-left: 245px;
+  padding: 42px 5vw;
+  max-width: 1500px;
+}
+header,
+.toolbar,
+.actions {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  justify-content: space-between;
+}
+header button {
+  align-self: center;
+}
+.eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  margin: 0;
+}
+.muted {
+  font-size: 13px;
+  color: #6a7e8b;
+}
+.totals {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin: 30px 0;
+}
+.stat,
+article,
+.device {
+  border: 1px solid #dfe6eb;
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+.stat {
+  margin: 0;
+}
+.stat strong {
+  display: block;
+  font-size: 32px;
+  margin: 12px 0 2px;
+}
+.stat span {
+  font-size: 13px;
+  color: #637a86;
+}
+.table-wrap {
+  overflow: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #6a7e8b;
+}
+td,
+th {
+  padding: 16px 12px;
+  border-bottom: 1px solid #e8edf0;
+}
+td button {
+  font-size: 12px;
+  margin: 3px;
+  padding: 8px 10px;
+}
+.badge {
+  font-size: 11px;
+  border-radius: 12px;
+  padding: 4px 9px;
+  background: #e2f3eb;
+  color: #286750;
+  white-space: nowrap;
+}
+.badge.off {
+  background: #f5e7e4;
+  color: #94594e;
+}
+.signin {
+  max-width: 450px;
+  margin: 12vh auto;
+  padding: 32px;
+}
+.signin h1 {
+  margin-top: 45px;
+}
+.signin form {
+  margin-top: 30px;
+}
+.signin button {
+  width: 100%;
+}
+dialog {
+  border: 1px solid #dfe6eb;
+  border-radius: 16px;
+  padding: 30px;
+  width: min(460px, 90vw);
+  color: inherit;
+}
+dialog::backdrop {
+  background: #0d273b80;
+}
+#notice {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  max-width: 480px;
+  background: #102e3d;
+  color: white;
+  padding: 18px 24px;
+  border-radius: 10px;
+  z-index: 10;
+}
+.device {
+  margin-top: 24px;
+}
+.device .totals {
+  grid-template-columns: repeat(3, 1fr);
+  margin: 20px 0;
+}
+.device code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  color: #687d87;
+}
+.device .device-edit {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.device-edit input {
+  margin: 8px 0;
+}
+.device-edit label {
+  flex: 1;
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  font-size: 14px;
+}
+.metrics p {
+  margin: 4px 0;
+}
+[hidden] {
+  display: none !important;
+}
+@media (max-width: 850px) {
+  aside {
+    position: static;
+    width: auto;
+    padding: 20px;
+  }
+  .brand {
+    font-size: 21px;
+  }
+  aside .eyebrow {
+    display: none;
+  }
+  nav {
+    display: flex;
+    margin-top: 18px;
+  }
+  .account {
+    position: absolute;
+    right: 20px;
+    top: 20px;
+  }
+  .account span {
+    display: none;
+  }
+  .account button {
+    padding: 8px;
+    font-size: 12px;
+  }
+  main {
+    margin: 0;
+    padding: 24px 18px;
+  }
+  .totals {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .stat {
+    padding: 16px;
+  }
+  .stat strong {
+    font-size: 27px;
+  }
+  .toolbar {
+    align-items: start;
+  }
+  .metrics {
+    grid-template-columns: 1fr;
+  }
+  h1 {
+    font-size: 28px;
+  }
+}
+@media (max-width: 850px) {
+  .device .totals {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .device .stat {
+    min-width: 0;
+    padding: 12px;
+  }
+  .device .stat span {
+    font-size: 11px;
+    overflow-wrap: anywhere;
+  }
+  .device .stat strong {
+    font-size: 22px;
+  }
+  .device .device-edit {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    margin-top: 12px;
+  }
+  .device-edit label {
+    grid-column: 1/-1;
+  }
+  .device-edit button {
+    height: 100%;
+  }
+  .metrics p {
+    overflow-wrap: anywhere;
+  }
+}
