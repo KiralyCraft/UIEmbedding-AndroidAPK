@@ -80,7 +80,9 @@ class Uploader(private val app: RecorderApp)
                 app.preferences.edit().putInt("upload_failures", 0).apply()
                 app.uploadStatus = "Server acknowledged uploaded data"
             } while (SystemClock.elapsedRealtime() < deadline)
-            return app.store.hasPending(owner) == false
+            val complete = !app.store.hasPending(owner)
+            if(complete) app.uploadStatus = "Account upload queue is clear"
+            return complete
         }
         catch (error: Exception)
         {

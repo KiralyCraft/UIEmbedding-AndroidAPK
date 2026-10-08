@@ -100,6 +100,36 @@ class OutboxInstrumentedTest
         db.rawQuery("SELECT COUNT(*) FROM reports WHERE owner=?",arrayOf(destination)).use { assertTrue(it.moveToFirst());assertEquals(600,it.getInt(0)) }
     }
 
+    @Test
+    fun transferClosedLocalDataWhileAccountRunContinues() {
+        val source="local:older"
+        val destination="d".repeat(64)
+        fun makeRun(owner: String): String {
+            val id=UUID.randomUUID().toString()
+            store.createRun(owner,JSONObject().put("id",id).put("revision",1).put("start_wall_ms",1L).put("start_elapsed_ns",1L))
+            assertTrue(store.append(id,owner,JSONObject().put("sequence",0).put("wall_ms",2L).put("elapsed_ns",2L).put("embedding_b64","vector"),1024*1024))
+            return id
+        }
+        val old=makeRun(source)
+        store.closeRun(old,"before_login")
+        val oldPayload=store.nextBatch(source)!!.toString()
+        val current=makeRun(destination)
+        makeRun("another-account")
+        val report=JSONObject().put("id",UUID.randomUUID().toString()).put("selected_fps",2.5)
+        store.saveReport(source,report)
+        assertEquals(PendingUploads(localSamples=1,localReports=1,accountSamples=1,otherSamples=1),store.pendingUploads(source,destination))
+        store.adoptLocal(source,destination)
+        assertEquals(PendingUploads(accountSamples=2,accountReports=1,otherSamples=1),store.pendingUploads(source,destination))
+        assertEquals(report.toString(),store.nextReport(destination)!!.toString())
+        assertTrue(store.append(current,destination,JSONObject().put("sequence",1).put("wall_ms",3L).put("elapsed_ns",3L).put("embedding_b64","new-vector"),1024*1024))
+        val batch=store.nextBatch(destination)!!
+        assertEquals(oldPayload,batch.toString())
+        store.acknowledge(destination,batch,reply(batch))
+        assertEquals(current,store.nextBatch(destination)!!.getJSONObject("run").getString("id"))
+        assertEquals(2L,store.pendingUploads(source,destination).accountSamples)
+        assertNull(store.nextBatch(source))
+    }
+
     private fun run(): String
     {
         val id = UUID.randomUUID().toString()

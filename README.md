@@ -79,3 +79,6 @@ Each return to an application creates a distinct run; transitions, locks, exclus
 This is a sideloaded research application. Store-distribution policy review, 16-KB-page devices, prolonged battery/thermal endurance and real MySQL concurrency remain separate validation work.
 
 Signed-in participants can create accounts under **People & devices**. Each creation records its creator and time; administrators see that history alongside per-device statistics. Participants see their own recordings and their direct account creations. See [deployment and migration notes](docs/SERVER_DEPLOYMENT.md#account-creation-history).
+
+
+The Android **Uploads and local storage** panel separates automatic uploads to the signed-in account from recordings made before sign-in and data belonging to another account/server. **Settings → Server and account → Sync older local recordings to this account** explicitly assigns the older local records, preserving their application labels, timestamps and embeddings. This works while an account-bound recording continues; open local-only runs must first be closed. Local copies are removed only after the server acknowledges them. A small changing automatic-upload queue during recording is normal.

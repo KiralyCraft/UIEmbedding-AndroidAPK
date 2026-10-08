@@ -46,6 +46,17 @@ data class PermissionState(
 
 data class CalibrationState(val active: Boolean = false, val progress: Float = 0f, val description: String = "Not calibrated", val selectedFps: Double = 0.0)
 
+data class PendingUploads(
+    val localSamples: Long = 0,
+    val localReports: Long = 0,
+    val accountSamples: Long = 0,
+    val accountReports: Long = 0,
+    val otherSamples: Long = 0,
+    val otherReports: Long = 0
+) {
+    val hasLocal: Boolean get() = localSamples > 0 || localReports > 0
+}
+
 data class RecordingSnapshot(
     val active: Boolean = false,
     val status: String = "Stopped",
@@ -67,7 +78,8 @@ data class RecordingSnapshot(
     val backend: String = "Not initialized",
     val preprocessing: String = "Not initialized",
     val calibration: CalibrationState = CalibrationState(),
-    val history: List<Double> = emptyList()
+    val history: List<Double> = emptyList(),
+    val pendingUploads: PendingUploads = PendingUploads()
 )
 
 /** Commit throughput uses monotonic time, never compositor refresh or target rate. */

@@ -86,7 +86,7 @@ class RecorderApp : Application()
             if (sessionStartedNs == 0L) 0 else ((if(captureActive || sessionStoppedNs==0L) now else sessionStoppedNs) - sessionStartedNs) / 1_000_000_000L,
             metrics.total, currentFps, fps, latestPreprocessMs, latestInferenceMs, latestHeadMs, p95,
             queue.second, queue.first, uploadStatus, thermalStatus, battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY),
-            battery.isCharging, processingBackend, preprocessingBackend, calibrationState, history)
+            battery.isCharging, processingBackend, preprocessingBackend, calibrationState, history, store.pendingUploads(localOwner, vault.identity()?.let { ownerKey(it) }))
     }
 
     val preferences by lazy { getSharedPreferences("settings", Context.MODE_PRIVATE) }
@@ -99,6 +99,7 @@ class RecorderApp : Application()
         super.onCreate()
         Permissions.createChannel(this)
         vault = Vault(this)
+        uploadStatus = vault.identity()?.let { "Signed in as ${it.optString("username")}" } ?: "Local recording · server not configured"
         store = LocalStore(this, vault)
         store.recoverInterruptedRuns()
         labels = LabelTracker(this)

@@ -124,7 +124,7 @@ class MainActivity : ComponentActivity() {
                             Menu.SETTINGS -> SettingsMenu()
                             Menu.PERMISSIONS -> PermissionChecklist()
                             Menu.CAPTURE -> CaptureSettings(snapshot)
-                            Menu.SERVER -> Server()
+                            Menu.SERVER -> Server(snapshot)
                             Menu.CALIBRATION -> CalibrationMenu(snapshot)
                             Menu.STORAGE -> Storage(snapshot)
                             Menu.DIAGNOSTICS -> Diagnostics(snapshot)
@@ -271,7 +271,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        Panel("Stored on this phone","${snapshot.queuedSamples} pending embeddings · ${"%.1f".format(snapshot.queuedBytes/1048576.0)} MiB\n${snapshot.uploadStatus}")
+        PendingUploadsPanel(snapshot)
         Text("Battery ${snapshot.batteryPercent}%${if(snapshot.charging) " · charging (power measurement unavailable)" else ""}",style=MaterialTheme.typography.bodySmall)
     }
     @Composable private fun AccessibilityRecovery() {
@@ -334,7 +334,7 @@ class MainActivity : ComponentActivity() {
         listOf(Menu.PERMISSIONS to "Permissions and readiness",Menu.CAPTURE to "Capture and automatic resume",Menu.SERVER to "Server and account",Menu.CALIBRATION to "Calibration",Menu.STORAGE to "Storage and pending data",Menu.DIAGNOSTICS to "Diagnostics").forEach { (menu,title) ->
             OutlinedButton(onClick={screen=menu},modifier=Modifier.fillMaxWidth().heightIn(min=56.dp)) { Text(title) }
         }
-        Text("Version 1.1.0 · F6 · screen pixels stay in memory",style=MaterialTheme.typography.bodySmall)
+        Text("Version ${packageManager.getPackageInfo(packageName,0).versionName} · F6 · screen pixels stay in memory",style=MaterialTheme.typography.bodySmall)
     }
     @Composable private fun CaptureSettings(snapshot: RecordingSnapshot) {
         var selected by remember { mutableStateOf(app.captureSource()) }
@@ -347,7 +347,25 @@ class MainActivity : ComponentActivity() {
         }
         Panel("Fast sessions","MediaProjection may capture faster, but Android ends sharing on lock and requires fresh consent. Android 15 can hide private notification content throughout a fast session.")
     }
-    @Composable private fun Server() {
+    @Composable private fun PendingUploadsPanel(snapshot: RecordingSnapshot) {
+        val pending=snapshot.pendingUploads
+        val identity=app.vault.identity()
+        Panel("Uploads and local storage", "${snapshot.queuedSamples} embeddings stored locally · ${"%.1f".format(snapshot.queuedBytes/1048576.0)} MiB") {
+            if(identity!=null) {
+                Text("Automatic uploads to ${identity.optString("username")} at ${identity.optString("server")}")
+                Text("Awaiting server acknowledgment: ${pending.accountSamples} embeddings · ${pending.accountReports} calibration reports")
+                Text(snapshot.uploadStatus)
+            } else Text("No account connected. Recordings stay on this phone.")
+            if(pending.hasLocal) {
+                Text("Not assigned to an account: ${pending.localSamples} embeddings · ${pending.localReports} calibration reports")
+                Text("These were recorded before signing in. They will stay local until you choose Sync older local recordings in Server and account. Current account uploads do not include them.")
+            }
+            if(pending.otherSamples>0 || pending.otherReports>0) Text("Another account/server: ${pending.otherSamples} embeddings · ${pending.otherReports} reports. Sign in to their original account to upload them.")
+            Text("Acknowledged recordings are removed from this queue. A small changing count is normal while recording.")
+        }
+    }
+
+    @Composable private fun Server(snapshot: RecordingSnapshot) {
         var url by remember { mutableStateOf(app.vault.identity()?.optString("server").orEmpty()) }
         var user by remember { mutableStateOf(app.vault.identity()?.optString("username").orEmpty()) }
         var password by remember { mutableStateOf("") }
@@ -360,15 +378,16 @@ class MainActivity : ComponentActivity() {
             busy=true; app.accountOperation=true; val secret=password; password=""
             tasks.execute { val error=runCatching { app.uploader.login(url,user,secret) }.exceptionOrNull(); runOnUiThread { busy=false; app.accountOperation=false; message(error?.message ?: "Signed in. Existing local recordings are not uploaded until you select Transfer below.") } }
         }
-        if(app.captureActive) Text("Stop recording before changing accounts or transferring data.")
+        if(app.captureActive) Text("Stop recording before changing accounts. Older local recordings can be transferred while recording continues.")
+        PendingUploadsPanel(snapshot)
         if(app.vault.identity()!=null) {
-            Action("Upload existing local recordings to this account",!busy && !app.captureActive) {
+            Action("Sync older local recordings to this account",!busy && snapshot.pendingUploads.hasLocal) {
                 val identity=app.vault.identity() ?: return@Action
                 AlertDialog.Builder(this@MainActivity).setTitle("Transfer local recordings?")
-                    .setMessage("Upload unbound local recordings to ${identity.optString("username")} at ${identity.optString("server")}? ${app.store.ownerStats(app.localOwner).second} local embeddings are waiting. Existing account-bound data stays with its account.")
+                    .setMessage("Upload unbound local recordings to ${identity.optString("username")} at ${identity.optString("server")}? ${snapshot.pendingUploads.localSamples} embeddings and ${snapshot.pendingUploads.localReports} calibration reports were recorded before signing in. Their original applications and times are preserved. Current recording and account-bound data stay with their account.")
                     .setNegativeButton("Cancel",null).setPositiveButton("Transfer") { _,_ ->
                         busy=true; app.accountOperation=true
-                        tasks.execute { val error=runCatching { check(!app.captureActive); app.store.adoptLocal(app.localOwner,ownerKey(identity)); app.uploader.retryNow(); app.requestUpload() }.exceptionOrNull(); runOnUiThread { busy=false; app.accountOperation=false; message(error?.message ?: "Transferred. Uploads will resume when the server is available.") } }
+                        tasks.execute { val error=runCatching { check(app.captureOwner()==ownerKey(identity)) { "Account changed; reopen this page before transferring" }; app.store.adoptLocal(app.localOwner,ownerKey(identity)); app.uploader.retryNow(); app.requestUpload() }.exceptionOrNull(); runOnUiThread { busy=false; app.accountOperation=false; message(error?.message ?: "Older recordings queued for upload. Recording can continue; the local copies are removed only after server acknowledgment.") } }
                     }.show()
             }
             OutlinedButton(onClick={app.uploader.retryNow();app.requestUpload()}) { Text("Retry uploads") }
@@ -388,7 +407,9 @@ class MainActivity : ComponentActivity() {
     }
     @Composable private fun Storage(snapshot: RecordingSnapshot) {
         var quota by remember { mutableStateOf(recordingSettings.quotaMb.toString()) }
-        Panel("Pending data","${snapshot.queuedSamples} embeddings · ${"%.1f".format(snapshot.queuedBytes/1048576.0)} MiB. At the limit recording pauses; older data is never evicted.")
+        PendingUploadsPanel(snapshot)
+        Text("Queue limit: recording pauses at this limit; older data is never evicted.")
+        if(snapshot.pendingUploads.hasLocal) Action("Review and sync older local recordings") { screen=Menu.SERVER }
         OutlinedTextField(value=quota,onValueChange={quota=it},label={Text("Queue limit, MiB (64–8192)")},modifier=Modifier.fillMaxWidth())
         Action("Save queue limit") { val amount=quota.toLongOrNull(); if(amount==null || amount !in 64L..8192L) message("Enter a queue limit between 64 and 8192 MiB") else { app.preferences.edit().putLong("queue_quota_mb",amount).apply(); recordingSettings=app.settings() } }
         OutlinedButton(enabled=!snapshot.active,onClick={ AlertDialog.Builder(this@MainActivity).setTitle("Delete pending data?").setMessage("Permanently delete all local pending recordings? Server data is unaffected.").setNegativeButton("Cancel",null).setPositiveButton("Delete locally") { _,_ -> tasks.execute { app.store.purgePending() } }.show() }) { Text("Delete pending data") }

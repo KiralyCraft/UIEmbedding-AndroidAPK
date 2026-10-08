@@ -213,6 +213,30 @@ class LocalStore(context: Context, private val vault: Vault, databaseName: Strin
         }
     }
 
+    /** Separate records awaiting an account from the current account's automatic upload queue. */
+    @Synchronized
+    fun pendingUploads(localOwner: String, accountOwner: String?): PendingUploads {
+        var result = PendingUploads()
+        readableDatabase.rawQuery("""
+            SELECT owner,SUM(samples),SUM(reports) FROM (
+                SELECT r.owner AS owner,COUNT(s.sequence) AS samples,0 AS reports
+                FROM runs r LEFT JOIN samples s ON s.run_id=r.id GROUP BY r.owner
+                UNION ALL SELECT owner,0,COUNT(*) FROM reports GROUP BY owner
+            ) GROUP BY owner
+        """.trimIndent(), null).use { rows ->
+            while(rows.moveToNext()) {
+                val samples=rows.getLong(1)
+                val reports=rows.getLong(2)
+                result=when(rows.getString(0)) {
+                    localOwner -> result.copy(localSamples=samples,localReports=reports)
+                    accountOwner -> result.copy(accountSamples=samples,accountReports=reports)
+                    else -> result.copy(otherSamples=result.otherSamples+samples,otherReports=result.otherReports+reports)
+                }
+            }
+        }
+        return result
+    }
+
     /** Rebind only the installation's unbound local data. AAD and ciphertext change atomically. */
     @Synchronized
     fun adoptLocal(source: String, destination: String) {
