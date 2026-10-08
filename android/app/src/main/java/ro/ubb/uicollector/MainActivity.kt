@@ -231,11 +231,13 @@ class MainActivity : ComponentActivity() {
         Text(if(permissionState.ready) "All required permissions are ready" else "Complete these before recording",style=MaterialTheme.typography.headlineSmall)
         GrantCard("Notifications",permissionState.notifications,"Enable app notifications and the Recording status channel.") { requestNotifications() }
         GrantCard("Accessibility labels",permissionState.accessibility,"Enable the collector's Accessibility service. Sideloaded apps may first require App info → Allow restricted settings.") { openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        AccessibilityRecovery()
         GrantCard("Usage Access",permissionState.usageAccess,"Allow foreground application and Activity labeling.") { openSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).setData(Uri.parse("package:$packageName")),Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
         Panel("Capture method",if(app.captureSource()==CaptureSource.ACCESSIBILITY) "Continuous Accessibility capture uses your enabled service and resumes after unlock." else "Fast sessions use Android screen sharing. Private notification content may be hidden, and locking ends the session.")
     }
     @Composable private fun Recording(snapshot: RecordingSnapshot) {
-        if(!permissionState.ready && !snapshot.active) Panel("Permissions need attention",permissionState.missingDescription) { Action("Review permissions") { screen=Menu.PERMISSIONS } }
+        if(!snapshot.active && (permissionState.notifications!=GrantState.GRANTED || permissionState.usageAccess!=GrantState.GRANTED)) Panel("Permissions need attention",permissionState.missingDescription) { Action("Review permissions") { screen=Menu.PERMISSIONS } }
+        AccessibilityRecovery()
         Panel(if(snapshot.calibration.active) "Calibrating" else if(snapshot.active) "Recording session active" else "Ready to record",snapshot.status) {
             if(snapshot.active && app.captureSource()==CaptureSource.MEDIA_PROJECTION && Build.VERSION.SDK_INT >= 35) Text("Android hides private notification content while screen sharing is active.",style=MaterialTheme.typography.bodySmall)
             if(!snapshot.calibration.active && snapshot.calibration.selectedFps>0) Text("Calibration complete · ${snapshot.calibration.selectedFps} samples/s ceiling")
@@ -271,6 +273,17 @@ class MainActivity : ComponentActivity() {
         }
         Panel("Stored on this phone","${snapshot.queuedSamples} pending embeddings · ${"%.1f".format(snapshot.queuedBytes/1048576.0)} MiB\n${snapshot.uploadStatus}")
         Text("Battery ${snapshot.batteryPercent}%${if(snapshot.charging) " · charging (power measurement unavailable)" else ""}",style=MaterialTheme.typography.bodySmall)
+    }
+    @Composable private fun AccessibilityRecovery() {
+        if(permissionState.accessibility!=GrantState.GRANTED) {
+            Panel("Accessibility is off","Android can turn off this service after Force Stop. Enable UI Embedding Collector in Accessibility settings, then return here and start recording.") {
+                Action("Open Accessibility settings") { openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            }
+        } else if(!app.labels.isConnected()) {
+            Panel("Accessibility needs reconnecting","Permission is granted, but Android has not connected the collector. This can happen after Force Stop. If it stays disconnected, switch the collector off and on in Accessibility settings, then return here.") {
+                Action("Open Accessibility settings") { openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            }
+        }
     }
     @Composable private fun Metric(title: String, value: String, modifier: Modifier) {
         FilledTonalButton(onClick={},modifier=modifier.heightIn(min=72.dp)) { Column { Text(value,style=MaterialTheme.typography.titleLarge); Text(title,style=MaterialTheme.typography.labelMedium) } }

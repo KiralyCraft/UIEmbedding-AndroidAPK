@@ -32,6 +32,8 @@ The mode menu displays these effective targets. Old imposed-ceiling calibrations
 
 ## Corrections made during validation
 
+Force Stop/relaunch follow-up: the original `Waiting: ro.ubb.uicollector` status represented the intentionally excluded collector screen; opening the animated fixture proved capture/inference were working. A separate `am force-stop` reproduction removed the collector from Android's enabled Accessibility list. The updated app showed `Accessibility is off`, disabled Start, and opened Android's Accessibility settings through the recovery button. After restoring the collector's service (preserving Termux:X11's service), a 12-second fixture visit committed 15 samples in Balanced mode. Returning to the collector displayed `Ready · open another app to record` and explicitly explained its own-screen exclusion. The APK build and all 11 JVM tests passed. Capture was stopped after testing, with Accessibility bound and no crashed services. UIAutomator itself temporarily disconnects Accessibility, so active-status text was verified using screenshots rather than hierarchy dumps; counts were then checked from the UI.
+
 Accessibility grant was originally conflated with transient service connection, causing Stage 3 flicker. Permission state now follows Android's grant; runtime labeling still waits for a bound, valid service. Old service-instance callbacks cannot disconnect a newer instance.
 
 The old preprocessing counter included the entire pre-inference capture tick. It now times only ingestion and transformation. The first CPU/OpenCL selector also incorrectly charged every GPU trial the initial allocation/upload latency; repeated fresh uploads and alternating order reversed that misleading result. CPU tensor copies were eliminated.

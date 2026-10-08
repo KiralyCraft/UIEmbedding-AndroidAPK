@@ -235,7 +235,7 @@ class CaptureService : Service()
         if(!capture.unlocked() || (calibration==null && (before==null || !allowed(before.packageName)))) {
             closeRun(if(!capture.unlocked()) "screen_locked" else "ambiguous_or_excluded_app")
             preprocessor?.clear();pendingFrame=false;capture.reset()
-            app.captureStatus=if(!capture.unlocked()) "Screen locked/off · recording resumes after unlock" else "Waiting: ${app.labels.status}"
+            app.captureStatus=if(!capture.unlocked()) "Screen locked/off · recording resumes after unlock" else waitingForApp(before)
             app.refreshSnapshot()
             getSystemService(NotificationManager::class.java).notify(1,notification(app.captureStatus))
             handler.postDelayed({ tick() },1000)
@@ -359,7 +359,7 @@ class CaptureService : Service()
                 paused=true
                 closeRun(if (label == null) "ambiguous_or_hidden_app" else "app_excluded")
                 processor.clear()
-                app.captureStatus = "Waiting: ${app.labels.status}"
+                app.captureStatus = waitingForApp(label)
             }
             else if (label.settled == false)
             {
@@ -449,6 +449,13 @@ class CaptureService : Service()
     }
 
     private fun allowed(packageName: String): Boolean = observedSettings.allows(packageName,this.packageName)
+
+    private fun waitingForApp(label: AppLabel?): String = when(label?.packageName) {
+        packageName -> "Ready · open another app to record. The collector does not record its own screen."
+        "android", "com.android.systemui" -> "Paused on a system screen · open an included app to resume recording."
+        null -> if(!app.labels.isConnected()) "Accessibility disconnected · reconnect the collector in Accessibility settings." else "Paused · ${app.labels.status}"
+        else -> "Paused · this app is excluded. Open another app or change your Applications settings."
+    }
 
     private fun startRun(packageName: String, wallMs: Long, elapsedNs: Long)
     {

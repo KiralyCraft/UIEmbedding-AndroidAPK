@@ -185,12 +185,18 @@ class LabelAccessibilityService : AccessibilityService()
         super.onServiceConnected()
         app.labels.connection(this, true)
         app.accessibilityService=this
+        inspectWindows(null)
         app.resumeRequestedRecording()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?)
     {
         if (event == null) { return }
+        inspectWindows(event)
+    }
+
+    private fun inspectWindows(event: AccessibilityEvent?)
+    {
         // Only window type/focus/bounds and the root package name are inspected.
         // Never traverse children or read node text, event.text, or content descriptions.
         val visible = windows.filter {
@@ -210,14 +216,14 @@ class LabelAccessibilityService : AccessibilityService()
             focused == null -> "No unambiguous focused app window"
             else -> null
         }
-        val isState = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        val isState = event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
         val root = focused?.root
         val focusedPackage = root?.packageName?.toString()
         @Suppress("DEPRECATION")
         root?.recycle()
-        val sameWindow = event.windowId == focused?.id
-        val packageName = focusedPackage ?: if (isState && sameWindow) event.packageName?.toString() else null
-        app.labels.windowState(this, packageName, if (isState && sameWindow) event.className?.toString()?.take(512) else null, focused?.id ?: -1, focused?.id ?: -1, reason)
+        val sameWindow = event?.windowId == focused?.id
+        val packageName = focusedPackage ?: if (isState && sameWindow) event?.packageName?.toString() else null
+        app.labels.windowState(this, packageName, if (isState && sameWindow) event?.className?.toString()?.take(512) else null, focused?.id ?: -1, focused?.id ?: -1, reason)
     }
 
     // Android interrupts feedback without unbinding the service (for example when

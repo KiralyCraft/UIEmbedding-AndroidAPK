@@ -8,6 +8,8 @@ The Recording, Applications and Settings tabs separate everyday controls from co
 
 All eligible installed applications and future installations are included by default. Applications provides searchable exclusions, including an optional system-app filter. The collector and system UI are always excluded. An existing nonempty legacy selected-app list remains in effect until the user explicitly switches to all applications.
 
+While viewing the collector, an active session says **Ready · open another app to record**; the collector's own screen is intentionally excluded. After **App info → Force Stop**, Android may disable Accessibility or leave it disconnected. The Recording and Permissions menus explain the actual state and link directly to Accessibility settings. Re-enable UI Embedding Collector if needed, return to the app and start recording. Window labeling refreshes immediately when the service reconnects.
+
 Recording works without an account or server. First use calibrates the complete capture, preprocessing, inference and encrypted-storage pipeline. Model/backend/driver/capture-method changes invalidate calibration. Maximum Detail uses the measured sustainable rate; Balanced uses half that rate, capped at 5/s; Battery Saver uses one quarter, capped at 1/s, and batches uploads. These modes remain distinct even on slower capture methods. The menu shows each effective rate. The dashboard shows actual committed throughput, stage timings, queue size, thermal state and session duration. The persistent notification has a Stop action.
 
 ### Continuous capture, lock/unlock and reboot
