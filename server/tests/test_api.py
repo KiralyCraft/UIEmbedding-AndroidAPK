@@ -195,3 +195,34 @@ def test_invalid_processing_backend_is_rejected(system, payload):
     payload["samples"][0]["processing_backend"]="fabricated_gpu"
     response=system["client"].post("/v1/ingest",json=payload,headers=system["headers"])
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize("adaptive", [False, True])
+def test_calibration_report_supports_adaptive_and_legacy_retries(system, adaptive: bool) -> None:
+    from collector.db import Benchmark
+    from collector.schemas import BenchmarkReport
+    from collector.api import canonical
+    from collector.security import digest
+
+    row = dict(target_fps=3.5, duration_ms=10.0, processed=0, fresh_frames=0,
+               p50_ms=1.0, p95_ms=1.0, achieved_fps=0.0, missed_deadlines=0, sustainable=False)
+    if adaptive:
+        row.update(attempts=1, rate_limited=True, confirmation=False)
+    body = dict(id=str(uuid.uuid4()), device_id=str(uuid.uuid4()), model_id=system["model_id"],
+                wall_ms=1790000000000, backend="litert_opencl_full_encoder", gpu_parity_cosine=1.0,
+                selected_fps=3.0, thermal_status=0, results=[row])
+    if not adaptive:
+        # Simulate a report committed by the old schema before a network retry.
+        old = BenchmarkReport.model_validate(body).model_dump(mode="json")
+        for entry in old["results"]:
+            for field in ("attempts", "rate_limited", "confirmation"):
+                entry.pop(field)
+        text = canonical(old)
+        with system["app"].state.sessions.begin() as session:
+            session.add(Benchmark(id=body["id"], user_id=system["owner"], device_id=body["device_id"],
+                model_id=body["model_id"], payload_sha256=digest(text), report_json=text, received_ms=body["wall_ms"]))
+    for _ in range(2):
+        response = system["client"].post("/v1/benchmarks", json=body, headers=system["headers"])
+        assert response.status_code == 200, response.text
+    body["results"][0]["target_fps"] = 5.0
+    assert system["client"].post("/v1/benchmarks", json=body, headers=system["headers"]).status_code == 409

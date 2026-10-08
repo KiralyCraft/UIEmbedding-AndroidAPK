@@ -136,7 +136,7 @@ class CaptureService : Service()
                 app.processingBackend=engine!!.backend
                 preprocessor = CapturePreprocessor(app,engine!!)
                 if (stopping) { return@post }
-                calibration = if (intent?.getBooleanExtra("calibrate", false)==true || app.needsCalibration()) Calibration(if(source==CaptureSource.ACCESSIBILITY) 2.5 else 30.0) else null
+                calibration = if (intent?.getBooleanExtra("calibrate", false)==true || app.needsCalibration()) Calibration() else null
                 app.calibrating=calibration!=null
                 app.calibrationState=CalibrationState(active=app.calibrating,description=if(app.calibrating) "Initializing calibration" else "Saved calibration")
                 if (calibration == null)
@@ -244,7 +244,11 @@ class CaptureService : Service()
         capture.request(calibration!=null) { frame,error ->
             if(stopping) return@request
             val after=if(calibration==null) app.labels.snapshot() else null
-            if(error!=null || (calibration==null && (after==null || after.generation!=before?.generation))) {
+            if(capture.lastRequestRateLimited) {
+                preprocessor?.clear();pendingFrame=false
+                app.captureStatus=error ?: "Android capture rate limit · reducing rate"
+                processTick(null,started,rateLimited=true)
+            } else if(error!=null || (calibration==null && (after==null || after.generation!=before?.generation))) {
                 closeRun("capture_unavailable_or_app_changed");preprocessor?.clear();pendingFrame=false
                 app.captureStatus=error ?: "Foreground changed during capture · waiting"
                 handler.postDelayed({ tick() },1000)
@@ -252,7 +256,7 @@ class CaptureService : Service()
         }
     }
 
-    private fun processTick(accessibilityFrame: CapturedFrame? = null, captureStartedNs: Long = SystemClock.elapsedRealtimeNanos())
+    private fun processTick(accessibilityFrame: CapturedFrame? = null, captureStartedNs: Long = SystemClock.elapsedRealtimeNanos(), rateLimited: Boolean = false)
     {
         if (stopping) { return }
         val started = captureStartedNs
@@ -323,7 +327,7 @@ class CaptureService : Service()
                 app.captureStatus = calibration!!.description
                 app.calibrationState=CalibrationState(true,calibration!!.progress,calibration!!.description,calibration!!.selectedFps)
                 if (thermal >= 4) { error("Device became critically hot during calibration; stopped") }
-                if (processor.hasFrame)
+                if (processor.hasFrame && fresh)
                 {
                     val prepared=processor.prepare()
                     val vector = model.encode(prepared)
@@ -331,10 +335,10 @@ class CaptureService : Service()
                     app.latestInferenceMs=model.inferenceMs;app.latestHeadMs=model.headMs
                     app.preprocessingBackend=processor.backend
                     app.store.benchmarkWrite(JSONObject().put("embedding_b64", vectorBase64(vector)).put("inference_ms", model.inferenceMs))
-                    val end = SystemClock.elapsedRealtimeNanos()
-                    val done = calibration!!.record(started / 1000000, end / 1000000, (end - started) / 1e6, fresh, end > dueNs + period + period / 10)
-                    if (done) { finishCalibration(thermal) }
                 }
+                val end = SystemClock.elapsedRealtimeNanos()
+                val done = calibration!!.record(started / 1000000, end / 1000000, (end - started) / 1e6, fresh, end > dueNs + period + period / 10,rateLimited)
+                if (done) { finishCalibration(thermal) }
             }
             else if (quotaPaused)
             {
@@ -418,7 +422,8 @@ class CaptureService : Service()
         if (stopping == false)
         {
             val now = SystemClock.elapsedRealtimeNanos()
-            dueNs += period
+            val nextTarget=calibration?.fps ?: rate.fps
+            dueNs = if(nextTarget!=target) now+(1e9/nextTarget).toLong() else dueNs+period
             if (dueNs < now) { dueNs = now + 1000000L }
             handler.postDelayed({ tick() }, if(paused) 1000L else ceil((dueNs - now).coerceAtLeast(0L) / 1e6).toLong())
         }

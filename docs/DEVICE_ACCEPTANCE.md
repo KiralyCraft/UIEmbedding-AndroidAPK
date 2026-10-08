@@ -4,6 +4,8 @@ These tests are **instructions, not claims that the supplied source has passed t
 
 See [measured Xperia results](../reports/DEVICE_RESULTS.md) for completed checks. `05_test_device_inference.sh ADB_SERIAL` reproduces GPU and synthetic preprocessing checks. `tools/continuous_capture_smoke.py` covers the controlled continuous-capture workflow; the remaining deployment checks below must be assessed separately.
 
+Use `python3 tools/continuous_capture_smoke.py ADB_SERIAL --rates-only` to run fresh calibration and compare all three modes on the animated fixture without locking or rebooting. It stops collection in `finally`; its read-only audit requires new samples after that calibration and checks both saved targets and actual acquisition intervals. Calibration should retain any Android screenshot-rate rejection, stop escalation, and sustain the selected lower rate for 30 seconds. The three displayed limits must be distinct even below 5/s. Missing screenshots must not count as successful inference.
+
 ## Build and numeric checks
 
 Run `00_export_model.sh` and retain its complete output. Require all nine synthetic inputs to pass original/split/TF/LiteRT parity. Optionally add representative local screenshot files through `--parity-images`; they are not packaged. Inspect the generated manifest for 960 backbone features, 384 output dimensions, NHWC [1,800,384,3], no quantization and only the reviewed GPU operator set.

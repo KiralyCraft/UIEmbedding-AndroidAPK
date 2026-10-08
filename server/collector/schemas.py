@@ -126,6 +126,9 @@ class CandidateResult(StrictModel):
     achieved_fps: float = Field(ge=0, le=1000)
     missed_deadlines: int = Field(ge=0)
     sustainable: bool
+    attempts: int | None = Field(default=None, ge=0)
+    rate_limited: bool = False
+    confirmation: bool = False
 
 
 class BenchmarkReport(StrictModel):
@@ -139,4 +142,4 @@ class BenchmarkReport(StrictModel):
     gpu_parity_cosine: float = Field(ge=-1, le=1.001)
     selected_fps: float = Field(gt=0, le=120)
     thermal_status: int = Field(ge=0, le=6)
-    results: list[CandidateResult] = Field(min_length=1, max_length=20)
+    results: list[CandidateResult] = Field(min_length=1, max_length=28)

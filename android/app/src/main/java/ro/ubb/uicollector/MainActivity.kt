@@ -276,10 +276,15 @@ class MainActivity : ComponentActivity() {
         FilledTonalButton(onClick={},modifier=modifier.heightIn(min=72.dp)) { Column { Text(value,style=MaterialTheme.typography.titleLarge); Text(title,style=MaterialTheme.typography.labelMedium) } }
     }
     @Composable private fun ModeSelector() {
-        Panel("Recording mode","") {
+        val calibrated=if(app.needsCalibration()) null else app.preferences.getFloat("calibrated_fps",0f).toDouble()
+        Panel("Recording mode","Rates apply to the selected capture method. Static screens, heat and excluded apps can lower actual throughput.") {
             RecordingMode.entries.forEach { mode ->
                 Row(Modifier.fillMaxWidth().selectable(selected=recordingSettings.mode==mode,role=Role.RadioButton,onClick={ app.preferences.edit().putString("recording_mode",mode.name).apply(); recordingSettings=app.settings() }),horizontalArrangement=Arrangement.SpaceBetween) {
-                    Column(Modifier.weight(1f).padding(vertical=8.dp)) { Text(mode.title,fontWeight=FontWeight.SemiBold); Text(mode.description,style=MaterialTheme.typography.bodySmall) }
+                    Column(Modifier.weight(1f).padding(vertical=8.dp)) {
+                        Text(mode.title,fontWeight=FontWeight.SemiBold)
+                        Text(mode.description,style=MaterialTheme.typography.bodySmall)
+                        Text(if(calibrated==null) "Effective rate available after calibration" else "Up to ${mode.ceiling(calibrated)} samples/s",style=MaterialTheme.typography.bodySmall)
+                    }
                     RadioButton(selected=recordingSettings.mode==mode,onClick=null)
                 }
             }
@@ -320,7 +325,7 @@ class MainActivity : ComponentActivity() {
     }
     @Composable private fun CaptureSettings(snapshot: RecordingSnapshot) {
         var selected by remember { mutableStateOf(app.captureSource()) }
-        Panel("Capture and automatic resume","Continuous capture pauses while locked or off and resumes after unlock. A running session is restored after reboot and first unlock when all permissions remain granted; Stop disables automatic resumption. Android limits Accessibility screenshot frequency; the initial ceiling is 2.5 samples/second and calibration may lower it. Stop recording to change methods.") {
+        Panel("Capture and automatic resume","Continuous capture pauses while locked or off and resumes after unlock. A running session is restored after reboot and first unlock when all permissions remain granted; Stop disables automatic resumption. Calibration increases capture frequency until Android rejects a request or the complete pipeline cannot keep up, then confirms a lower rate for 30 seconds. Stop recording to change methods.") {
             CaptureSource.entries.forEach { source ->
                 Row(Modifier.fillMaxWidth().selectable(selected==source,enabled=!snapshot.active,role=Role.RadioButton,onClick={
                     selected=source;app.preferences.edit().putString("capture_source",source.name).putBoolean("continuous_recording_requested",false).apply()
@@ -357,14 +362,14 @@ class MainActivity : ComponentActivity() {
         }
     }
     @Composable private fun CalibrationMenu(snapshot: RecordingSnapshot) {
-        Panel("Automatic calibration", "Runs on first use and when the model, backend or GPU driver changes. A valid result is reused between sessions. Last ceiling: ${app.preferences.getFloat("calibrated_fps",0f)} samples/second.") {
+        Panel("Automatic calibration", "Measures capture, inference and storage at increasing rates, up to the app's 30/s test ceiling. Stops at the first unsustainable rate and confirms a lower rate for 30 seconds. Repeats when the model, backend, capture method or GPU driver changes. ${if(app.needsCalibration()) "New calibration required for this configuration." else "Measured sustainable rate: ${app.preferences.getFloat("calibrated_fps",0f)} samples/second."}") {
             Action("Recalibrate and start",permissionState.ready && !snapshot.active && !consentPending) { begin(true) }
         }
         val saved=app.preferences.getString("last_benchmark",null)
         if(saved!=null) {
             val report=org.json.JSONObject(saved); val rows=report.getJSONArray("results")
             Panel("Last calibration","Backend: ${report.getString("backend")}\nSelected ${report.getDouble("selected_fps")} /s") {
-                repeat(rows.length()) { val row=rows.getJSONObject(it); Text("${row.getDouble("target_fps")} /s → ${"%.1f".format(row.getDouble("achieved_fps"))} /s · p95 ${"%.1f".format(row.getDouble("p95_ms"))} ms · ${if(row.getBoolean("sustainable")) "passed" else "not sustainable"}") }
+                repeat(rows.length()) { val row=rows.getJSONObject(it); Text("${row.getDouble("target_fps")} /s → ${"%.1f".format(row.getDouble("achieved_fps"))} /s · p95 ${"%.1f".format(row.getDouble("p95_ms"))} ms · ${if(row.optBoolean("rate_limited")) "Android screenshot rate limit" else if(row.getBoolean("sustainable")) "passed" else "not sustainable"}${if(row.optBoolean("confirmation")) " · sustained confirmation" else ""}") }
             }
         }
     }

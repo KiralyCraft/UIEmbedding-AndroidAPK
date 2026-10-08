@@ -135,7 +135,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/v1/benchmarks")
     def benchmarks(body: BenchmarkReport, owner: str = Depends(current_user)):
-        text = canonical(body.model_dump(mode="json"))
+        document = body.model_dump(mode="json")
+        # Preserve the pre-adaptive canonical payload for retries of old reports.
+        for result, row in zip(body.results, document["results"]):
+            for field in ("attempts", "rate_limited", "confirmation"):
+                if field not in result.model_fields_set:
+                    row.pop(field, None)
+        text = canonical(document)
         signature = digest(text)
         with sessions.begin() as session:
             encoder = session.get(Encoder, body.model_id)

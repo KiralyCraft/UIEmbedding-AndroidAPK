@@ -2,11 +2,11 @@ package ro.ubb.uicollector
 
 import kotlin.math.min
 
-enum class RecordingMode(val title: String, val limit: Double, val description: String) {
-    MAXIMUM_DETAIL("Maximum Detail", 30.0, "Highest calibrated sustainable rate"),
-    BALANCED("Balanced", 5.0, "Up to 5 samples per second"),
-    BATTERY_SAVER("Battery Saver", 1.0, "Up to 1 sample per second; batched uploads");
-    fun ceiling(calibrated: Double): Double = min(limit, calibrated)
+enum class RecordingMode(val title: String, val limit: Double, val fraction: Double, val description: String) {
+    MAXIMUM_DETAIL("Maximum Detail", 30.0, 1.0, "Highest calibrated sustainable rate"),
+    BALANCED("Balanced", 5.0, 0.5, "Half the calibrated rate, up to 5/s"),
+    BATTERY_SAVER("Battery Saver", 1.0, 0.25, "Quarter of the calibrated rate, up to 1/s; batched uploads");
+    fun ceiling(calibrated: Double): Double = min(limit, calibrated * fraction)
 }
 
 enum class CapturePolicy { ALL_EXCEPT_EXCLUDED, LEGACY_SELECTED }

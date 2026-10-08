@@ -6,6 +6,7 @@ are preserved. Recording stops in finally, including on test failures.
 """
 from __future__ import annotations
 import argparse
+from collections.abc import Callable
 import json
 from pathlib import Path
 import re
@@ -18,7 +19,10 @@ def main() -> None:
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("serial")
     parser.add_argument("--saved-calibration",action="store_true")
+    parser.add_argument("--rates-only",action="store_true",help="Calibrate and exercise all three modes without locking the phone")
     args=parser.parse_args()
+    if args.rates_only and args.saved_calibration:
+        parser.error("--rates-only requires fresh calibration; omit --saved-calibration")
     report=Path(__file__).resolve().parents[1]/"reports/work"
     report.mkdir(parents=True,exist_ok=True)
 
@@ -102,28 +106,44 @@ def main() -> None:
             time.sleep(5)
         else:
             if not args.saved_calibration: raise RuntimeError("Calibration did not finish within five minutes")
-        launch("a");launch("b");launch("a")
-        print("Locking for eight seconds; checking automatic resume after unlock",flush=True)
-        adb("shell","input","keyevent","223");time.sleep(8)
-        adb("shell","input","keyevent","224")
-        print("WAITING_FOR_OWNER_UNLOCK: please unlock the phone normally",flush=True)
-        deadline=time.monotonic()+300
-        while not re.search(r"\bshowing=false\b",adb("shell","dumpsys","window","policy")):
-            if time.monotonic()>deadline: raise RuntimeError("Phone is still locked; owner must unlock before this test")
-            time.sleep(1)
-        launch("a",12)
-        assert "null" in adb("shell","dumpsys","media_projection"), "Continuous capture must not own a projection"
-        adb("shell","am","start","-W","-n","ro.ubb.uicollector/.MainActivity")
-        tap("Battery Saver")
-        launch("b",12)
+        if args.rates_only:
+            for mode in ("Maximum Detail","Balanced","Battery Saver"):
+                adb("shell","am","start","-W","-n","ro.ubb.uicollector/.MainActivity")
+                tap(mode)
+                launch("a",20)
+            stop()
+            adb("shell","am","start","-W","-n","ro.ubb.uicollector/.MainActivity")
+            tap("Maximum Detail")
+            print("All three modes exercised; default restored",flush=True)
+        else:
+            exercise_unlock(adb,launch)
+            adb("shell","am","start","-W","-n","ro.ubb.uicollector/.MainActivity")
+            tap("Battery Saver")
+            launch("b",12)
     finally:
         stop()
         print("Recording stopped; encrypted data retained",flush=True)
-    result=adb("shell","am","instrument","-w","-r","-e","class","ro.ubb.uicollector.RecordedVisitsInstrumentedTest","ro.ubb.uicollector.test/androidx.test.runner.AndroidJUnitRunner")
-    (report/"controlled-visits-tests.txt").write_text(result+"\n")
+    suite="AdaptiveRatesInstrumentedTest" if args.rates_only else "RecordedVisitsInstrumentedTest"
+    report_name="adaptive-rates" if args.rates_only else "controlled-visits"
+    result=adb("shell","am","instrument","-w","-r","-e","class",f"ro.ubb.uicollector.{suite}","ro.ubb.uicollector.test/androidx.test.runner.AndroidJUnitRunner")
+    (report/f"{report_name}-tests.txt").write_text(result+"\n")
     if "OK (1 test)" not in result: raise RuntimeError(result)
-    (report/"controlled-visits-report.json").write_text(adb("shell","run-as","ro.ubb.uicollector","cat","cache/controlled-visits-report.json")+"\n")
+    (report/f"{report_name}-report.json").write_text(adb("shell","run-as","ro.ubb.uicollector","cat",f"cache/{report_name}-report.json")+"\n")
     print("Controlled capture acceptance passed",flush=True)
+
+
+def exercise_unlock(adb: Callable[..., str], launch: Callable[..., None]) -> None:
+    launch("a");launch("b");launch("a")
+    print("Locking for eight seconds; checking automatic resume after unlock",flush=True)
+    adb("shell","input","keyevent","223");time.sleep(8)
+    adb("shell","input","keyevent","224")
+    print("WAITING_FOR_OWNER_UNLOCK: please unlock the phone normally",flush=True)
+    deadline=time.monotonic()+300
+    while not re.search(r"\bshowing=false\b",adb("shell","dumpsys","window","policy")):
+        if time.monotonic()>deadline: raise RuntimeError("Phone is still locked; owner must unlock before this test")
+        time.sleep(1)
+    launch("a",12)
+    assert "null" in adb("shell","dumpsys","media_projection"), "Continuous capture must not own a projection"
 
 
 if __name__=="__main__":

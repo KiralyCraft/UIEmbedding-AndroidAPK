@@ -73,7 +73,7 @@ class RecorderApp : Application()
 
     fun calibrationSignature(backend: String = preferences.getString("encoder_backend", "litert_opencl_full_encoder")!!): String {
         val manifest = org.json.JSONObject(assets.open("f6_manifest.json").bufferedReader().use { it.readText() })
-        return manifest.getString("model_id") + ":" + backend + ":preprocessing_v2:" + captureSource().name + ":" + preferences.getString("selected_preprocessor","opencv_cpu") + ":" + preferences.getString("gpu_driver","unknown") + ":" + android.os.Build.FINGERPRINT
+        return manifest.getString("model_id") + ":" + backend + ":preprocessing_v2:adaptive_capture_v1:" + captureSource().name + ":" + preferences.getString("selected_preprocessor","opencv_cpu") + ":" + preferences.getString("gpu_driver","unknown") + ":" + android.os.Build.FINGERPRINT
     }
     fun needsCalibration(): Boolean = runCatching { preferences.getString("calibrated_signature", "") != calibrationSignature() }.getOrDefault(true)
 

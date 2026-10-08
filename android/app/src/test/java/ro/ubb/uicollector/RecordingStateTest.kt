@@ -32,12 +32,25 @@ class RecordingStateTest {
         assertFalse(state.isConnected())
     }
     @Test fun modesStayBelowTheirCalibrationAndMetricsExpire() {
-        assertEquals(2.0,RecordingMode.BALANCED.ceiling(2.0),0.0)
+        assertEquals(1.0,RecordingMode.BALANCED.ceiling(2.0),0.0)
         assertEquals(1.0,RecordingMode.BATTERY_SAVER.ceiling(30.0),0.0)
         val metrics=RecordingMetrics()
         repeat(10) { metrics.commit(1_000_000_000L,20.0) }
         assertEquals(1.0,metrics.snapshot(2_000_000_000L).first,0.0)
         assertEquals(0.0,metrics.snapshot(12_000_000_000L).first,0.0)
         assertEquals(10L,metrics.total)
+    }
+    @Test fun modesRemainDistinctEvenAtLowCaptureRates() {
+        listOf(0.25,1.0,2.5,3.5,5.0,30.0).forEach { calibrated ->
+            val maximum=RecordingMode.MAXIMUM_DETAIL.ceiling(calibrated)
+            val balanced=RecordingMode.BALANCED.ceiling(calibrated)
+            val battery=RecordingMode.BATTERY_SAVER.ceiling(calibrated)
+            assertTrue(maximum>balanced && balanced>battery)
+            val controller=RateController(battery)
+            repeat(400) { controller.observe(10.0,3) }
+            assertTrue(controller.fps<=battery)
+        }
+        assertEquals(1.75,RecordingMode.BALANCED.ceiling(3.5),0.0)
+        assertEquals(0.875,RecordingMode.BATTERY_SAVER.ceiling(3.5),0.0)
     }
 }

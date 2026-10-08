@@ -18,19 +18,25 @@ class AccessibilityCapture(private val app: RecorderApp, private val handler: Ha
     private var buffer: ByteBuffer? = null
     private var previousFingerprint: Long? = null
     private var lastRequestMs = 0L
+    private var requestIntervalMs = 0L
+    var lastRequestRateLimited = false
+        private set
     var closed = false
     fun reset() { previousFingerprint=null }
     fun unlocked(): Boolean = app.getSystemService(PowerManager::class.java).isInteractive &&
         !app.getSystemService(KeyguardManager::class.java).isKeyguardLocked
 
     fun request(calibrating: Boolean, callback: (CapturedFrame?, String?) -> Unit) {
+        lastRequestRateLimited=false
         val service=app.accessibilityService
         if(closed || !unlocked()) { callback(null,"Screen locked/off · recording resumes after unlock");return }
         if(service==null) { callback(null,"Waiting for Accessibility service");return }
-        val delay=(lastRequestMs+400-SystemClock.elapsedRealtime()).coerceAtLeast(0)
+        val delay=(lastRequestMs+requestIntervalMs-SystemClock.elapsedRealtime()).coerceAtLeast(0)
         handler.postDelayed({
             if(closed || !unlocked()) { callback(null,"Screen locked/off · recording resumes after unlock");return@postDelayed }
-            lastRequestMs=SystemClock.elapsedRealtime()
+            val now=SystemClock.elapsedRealtime()
+            val interval=now-lastRequestMs
+            lastRequestMs=now
             try {
                 service.takeScreenshot(Display.DEFAULT_DISPLAY,Executor { handler.post(it) },object: AccessibilityService.TakeScreenshotCallback {
                     override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
@@ -54,6 +60,11 @@ class AccessibilityCapture(private val app: RecorderApp, private val handler: Ha
                         finally { pixels?.recycle();wrapped?.recycle();hardware.close() }
                     }
                     override fun onFailure(errorCode: Int) {
+                        if(errorCode==AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT) {
+                            lastRequestRateLimited=true
+                            // Learn from this device's rejection, with 10% scheduling headroom.
+                            requestIntervalMs=maxOf(requestIntervalMs,interval+(interval/10).coerceAtLeast(20))
+                        }
                         callback(null,when(errorCode) {
                             AccessibilityService.ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS -> "Enable screen capture for the collector in Accessibility settings"
                             AccessibilityService.ERROR_TAKE_SCREENSHOT_SECURE_WINDOW -> "Protected window · collection paused"

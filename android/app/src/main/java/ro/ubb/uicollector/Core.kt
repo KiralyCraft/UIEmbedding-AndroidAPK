@@ -5,6 +5,7 @@ import java.nio.ByteOrder
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sqrt
 
 /** Android-independent implementation of the ORIGINAL checkpoint head. */
@@ -93,8 +94,9 @@ class EmbeddingHead(bytes: ByteArray)
 
 class RateController(private val ceiling: Double)
 {
-    val candidates = listOf(0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0, 30.0)
-    var fps = ceiling.coerceIn(0.25, 30.0)
+    val candidates = (listOf(0.25, 0.5, 1.0, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 10.0, 15.0, 20.0, 30.0) + ceiling).distinct().sorted()
+    private val floor = min(0.25, ceiling)
+    var fps = ceiling.coerceAtMost(30.0)
         private set
     private val durations = mutableListOf<Double>()
     private var coolWindows = 0
@@ -112,7 +114,7 @@ class RateController(private val ceiling: Double)
         val safe = (750.0 / max(p95, 1.0)).coerceAtMost(ceiling)
         if (safe < fps || thermalStatus >= 3)
         {
-            fps = if (thermalStatus >= 3) max(0.25, fps / 2.0) else candidates.lastOrNull { it <= safe } ?: 0.25
+            fps = if (thermalStatus >= 3) max(floor, fps / 2.0) else candidates.lastOrNull { it <= safe } ?: floor
             coolWindows = 0
         }
         else if (safe >= fps * 1.5 && thermalStatus <= 1)
