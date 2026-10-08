@@ -1,0 +1,13 @@
+{
+  "original_checkpoint_name": "best_F6(1).pts",
+  "original_checkpoint_sha256": "792b1745dc18e3f475878e91362568882d85137bc1a44e71e441e3471978281f",
+  "weights_sha256": "c800cce3cb187fcec0002be3bc2a5659a44d200178f4a612670ebcfb9e2fbb9b",
+  "checkpoint_step": 26000,
+  "model_name": "mobilenetv4_conv_small.e2400_r224_in1k",
+  "embedding_dim": 384,
+  "backbone_feature_dim": 960,
+  "input_height": 800,
+  "input_width": 384,
+  "original_code_archive_sha256": "1986e3abd14c4d838daea37a7c8ab9b16a636457e0e4e6b5a43af48bfbf03326",
+  "note": "Tensor-only checkpoint; training optimizer and RNG state removed. Every student weight verified byte-for-byte equal to supplied checkpoint."
+}

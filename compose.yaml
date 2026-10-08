@@ -1,0 +1,38 @@
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: collector
+      MYSQL_USER: collector
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h 127.0.0.1 -uroot --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: mysql+pymysql://collector:${MYSQL_PASSWORD}@mysql:3306/collector?charset=utf8mb4
+      TOKEN_DAYS: 90
+      FORWARDED_ALLOW_IPS: ${TRUSTED_PROXY_IPS:-127.0.0.1}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./android/app/src/main/assets:/models:ro
+      - ./exports:/exports
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+volumes:
+  mysql_data:

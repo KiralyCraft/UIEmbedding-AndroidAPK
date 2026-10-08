@@ -1,0 +1,3 @@
+<resources>
+    <string name="accessibility_description">With your consent, this research collector reads foreground package names, window class names, and window types to label locally computed screen embeddings. It does not read or store accessibility text or view hierarchies, perform gestures, or interact with other apps. Multiple app windows, keyboards and overlays may cause collection to pause.</string>
+</resources>

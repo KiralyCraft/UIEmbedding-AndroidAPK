@@ -1,0 +1,7 @@
+FROM python:3.11-slim
+ENV CUDA_VISIBLE_DEVICES=-1 TF_ENABLE_ONEDNN_OPTS=0 PYTHONUNBUFFERED=1
+RUN apt-get update && apt-get install -y --no-install-recommends libglib2.0-0 libgomp1 && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY tools/export-requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r /tmp/requirements.txt
+ENTRYPOINT ["python", "tools/export_f6.py"]
