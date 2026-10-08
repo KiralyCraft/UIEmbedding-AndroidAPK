@@ -77,3 +77,5 @@ The encrypted SQLite outbox uses WAL and FULL synchronization on every connectio
 Each return to an application creates a distinct run; transitions, locks, exclusions and ambiguous labels can split visits. Samples preserve acquisition timestamps, Activity source, sequence, mode, preprocessing/backend and capture method. The server only exports closed, complete, nonempty runs as `embeddings.npy`, `samples.jsonl` and `run.json`; run numbers are identifiers, not chronological rankings. No arbitrary crop is treated as a whole-screen embedding.
 
 This is a sideloaded research application. Store-distribution policy review, 16-KB-page devices, prolonged battery/thermal endurance and real MySQL concurrency remain separate validation work.
+
+Signed-in participants can create accounts under **People & devices**. Each creation records its creator and time; administrators see that history alongside per-device statistics. Participants see their own recordings and their direct account creations. See [deployment and migration notes](docs/SERVER_DEPLOYMENT.md#account-creation-history).

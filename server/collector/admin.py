@@ -10,12 +10,12 @@ from typing import Callable
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import Field
-from sqlalchemy import Integer, delete, func, select
+from sqlalchemy import Integer, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import aliased, sessionmaker
 
 from .config import Settings
-from .db import Administrator, Benchmark, Device, Run, Sample, Token, User
+from .db import AccountCreation, Administrator, Benchmark, Device, Run, Sample, Token, User
 from .schemas import Login, StrictModel
 from .security import authenticate, digest, now_ms, password_hash
 
@@ -50,17 +50,21 @@ def install_admin(app: FastAPI, config: Settings, sessions: sessionmaker, login:
         response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         return response
 
-    def administrator(request: Request) -> str:
+    def browser_user(request: Request) -> str:
         token = request.cookies.get(COOKIE, "")
         with sessions() as session:
             user = authenticate(session, token)
             if user is None:
                 raise HTTPException(401, "Sign in to continue")
-            if session.get(Administrator, user.id) is None:
-                raise HTTPException(403, "Administrator access required")
             if request.method not in ("GET", "HEAD") and not secrets.compare_digest(request.headers.get("X-CSRF-Token", ""), digest("csrf:" + token)):
                 raise HTTPException(403, "Reload the page and try again")
             return user.id
+
+    def administrator(owner: str = Depends(browser_user)) -> str:
+        with sessions() as session:
+            if session.get(Administrator, owner) is None:
+                raise HTTPException(403, "Administrator access required")
+        return owner
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
@@ -81,38 +85,60 @@ def install_admin(app: FastAPI, config: Settings, sessions: sessionmaker, login:
         with sessions.begin() as session:
             token = session.get(Token, digest(result["token"]))
             allowed = session.get(Administrator, result["user_id"]) is not None
-            if not allowed:
-                session.delete(token)
-            else:
-                token.expires_ms = now_ms() + 8 * 3600 * 1000
-        if not allowed:
-            raise HTTPException(403, "Administrator access required")
+            token.expires_ms = now_ms() + 8 * 3600 * 1000
         response.set_cookie(COOKIE, result["token"], max_age=8 * 3600, httponly=True, secure=config.secure_cookies, samesite="strict", path=cookie_path)
-        return {"username": result["username"], "csrf": digest("csrf:" + result["token"])}
+        return {"username": result["username"], "administrator": allowed, "csrf": digest("csrf:" + result["token"])}
 
     @app.get("/admin/session")
-    def web_session(request: Request, owner: str = Depends(administrator)) -> dict:
+    def web_session(request: Request, owner: str = Depends(browser_user)) -> dict:
         with sessions() as session:
-            return {"username": session.get(User, owner).username, "csrf": digest("csrf:" + request.cookies[COOKIE])}
+            return {"username": session.get(User, owner).username, "administrator": session.get(Administrator, owner) is not None, "csrf": digest("csrf:" + request.cookies[COOKIE])}
 
     @app.post("/admin/logout")
-    def web_logout(request: Request, response: Response, owner: str = Depends(administrator)) -> dict:
+    def web_logout(request: Request, response: Response, owner: str = Depends(browser_user)) -> dict:
         with sessions.begin() as session:
             session.execute(delete(Token).where(Token.token_hash == digest(request.cookies[COOKIE]), Token.user_id == owner))
         response.delete_cookie(COOKIE, path=cookie_path, secure=config.secure_cookies, httponly=True, samesite="strict")
         return {"revoked": True}
 
     @app.get("/admin/users")
-    def users(owner: str = Depends(administrator)) -> list[dict]:
+    def users(owner: str = Depends(browser_user)) -> list[dict]:
         with sessions() as session:
-            aggregate = {row.user_id: row for row in session.execute(select(Run.user_id, func.count().label("runs"), func.sum(Run.received_samples).label("samples"), func.max(Run.updated_ms).label("last_upload_ms")).group_by(Run.user_id))}
-            counts = dict(session.execute(select(Device.user_id, func.count()).group_by(Device.user_id)).all())
-            admins = set(session.scalars(select(Administrator.user_id)))
-            return [{"id": u.id, "username": u.username, "active": u.active, "administrator": u.id in admins, "self": u.id == owner, "devices": counts.get(u.id, 0), "runs": aggregate[u.id].runs if u.id in aggregate else 0, "samples": int(aggregate[u.id].samples) if u.id in aggregate else 0, "last_upload_ms": aggregate[u.id].last_upload_ms if u.id in aggregate else None} for u in session.scalars(select(User).order_by(User.username))]
+            is_admin = session.get(Administrator, owner) is not None
+            visible = select(User) if is_admin else select(User).where(User.id == owner)
+            creator = aliased(User)
+            history = select(AccountCreation.user_id, creator.username, AccountCreation.created_ms).join(creator, creator.id == AccountCreation.creator_id)
+            if not is_admin:
+                history = history.where(AccountCreation.user_id == owner)
+            provenance = {r.user_id: r for r in session.execute(history)}
+            totals = select(Run.user_id, func.count().label("runs"), func.sum(Run.received_samples).label("samples"), func.max(Run.updated_ms).label("last_upload_ms"))
+            device_counts = select(Device.user_id, func.count())
+            if not is_admin:
+                totals = totals.where(Run.user_id == owner)
+                device_counts = device_counts.where(Device.user_id == owner)
+            aggregate = {row.user_id: row for row in session.execute(totals.group_by(Run.user_id))}
+            counts = dict(session.execute(device_counts.group_by(Device.user_id)).all())
+            admins = set(session.scalars(select(Administrator.user_id))) if is_admin else set()
+            return [{"id": u.id, "username": u.username, "active": u.active, "administrator": u.id in admins, "self": u.id == owner, "created_by": provenance[u.id].username if u.id in provenance else None, "created_ms": provenance[u.id].created_ms if u.id in provenance else None, "devices": counts.get(u.id, 0), "runs": aggregate[u.id].runs if u.id in aggregate else 0, "samples": int(aggregate[u.id].samples) if u.id in aggregate else 0, "last_upload_ms": aggregate[u.id].last_upload_ms if u.id in aggregate else None} for u in session.scalars(visible.order_by(User.username))]
 
+    @app.get("/account/creations")
+    def creations(owner: str = Depends(browser_user)) -> list[dict]:
+        with sessions() as session:
+            return [{"username": username, "created_ms": created_ms} for username, created_ms in session.execute(select(User.username, AccountCreation.created_ms).join(AccountCreation, AccountCreation.user_id == User.id).where(AccountCreation.creator_id == owner).order_by(AccountCreation.created_ms.desc()))]
+
+    @app.post("/account/users", status_code=201)
     @app.post("/admin/users", status_code=201)
-    def create_user(body: CreateUser, owner: str = Depends(administrator)) -> dict:
+    def create_user(body: CreateUser, owner: str = Depends(browser_user)) -> dict:
         with sessions.begin() as session:
+            # Serialize creations per creator across workers; enforce a rolling daily quota.
+            session.execute(update(User).where(User.id == owner).values(active=User.active))
+            creator = session.get(User, owner)
+            if creator is None or not creator.active:
+                raise HTTPException(401, "Sign in to continue")
+            if session.get(Administrator, owner) is None:
+                recent = session.scalar(select(func.count()).select_from(AccountCreation).where(AccountCreation.creator_id == owner, AccountCreation.created_ms > now_ms() - 86400000))
+                if recent >= 20:
+                    raise HTTPException(429, "Account creation limit reached: 20 per day", headers={"Retry-After": "86400"})
             username = body.username.lower()
             if session.scalar(select(User.id).where(User.username == username)):
                 raise HTTPException(409, "Username already exists")
@@ -122,6 +148,7 @@ def install_admin(app: FastAPI, config: Settings, sessions: sessionmaker, login:
                 session.flush()
             except IntegrityError as exc:
                 raise HTTPException(409, "Username already exists") from exc
+            session.add(AccountCreation(user_id=user.id, creator_id=owner, created_ms=now_ms()))
             return {"id": user.id, "username": username}
 
     @app.patch("/admin/users/{user_id}")
@@ -149,8 +176,10 @@ def install_admin(app: FastAPI, config: Settings, sessions: sessionmaker, login:
         return {"revoked": True}
 
     @app.get("/admin/users/{user_id}/devices")
-    def devices(user_id: uuid.UUID, owner: str = Depends(administrator)) -> list[dict]:
+    def devices(user_id: uuid.UUID, owner: str = Depends(browser_user)) -> list[dict]:
         with sessions() as session:
+            if str(user_id) != owner and session.get(Administrator, owner) is None:
+                raise HTTPException(403, "Administrator access required")
             if session.get(User, str(user_id)) is None:
                 raise HTTPException(404, "User not found")
             rows = []

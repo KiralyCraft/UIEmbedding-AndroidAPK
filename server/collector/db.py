@@ -16,6 +16,13 @@ class User(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class AccountCreation(Base):
+    __tablename__ = "account_creations"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    creator_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    created_ms: Mapped[int] = mapped_column(BigInteger, index=True)
+
+
 class Token(Base):
     __tablename__ = "auth_tokens"
     token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)

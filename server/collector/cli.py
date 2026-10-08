@@ -10,7 +10,7 @@ import numpy as np
 from sqlalchemy import delete, select
 from .api import canonical
 from .config import Settings
-from .db import Administrator, Base, Encoder, LoginRateLimit, Run, Sample, Token, User, database
+from .db import AccountCreation, Administrator, Base, Encoder, LoginRateLimit, Run, Sample, Token, User, database
 from .security import password_hash
 
 
@@ -46,6 +46,7 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("init-db", help="Create initial schema; do not use for future schema upgrades")
     commands.add_parser("upgrade-rate-limits", help="Add persistent shared login rate limits without changing existing records")
+    commands.add_parser("upgrade-account-creations", help="Add account creator history without inventing provenance for existing users")
     add = commands.add_parser("create-user")
     add.add_argument("username")
     add.add_argument("--admin", action="store_true")
@@ -61,6 +62,10 @@ def main() -> None:
     export.add_argument("--package")
     args = parser.parse_args()
     engine, sessions = database(Settings.from_environment().database_url)
+    if args.command == "upgrade-account-creations":
+        AccountCreation.__table__.create(engine, checkfirst=True)
+        print("Account creation history ready")
+        return
     if args.command == "upgrade-rate-limits":
         LoginRateLimit.__table__.create(engine, checkfirst=True)
         print("Login rate-limit table ready")

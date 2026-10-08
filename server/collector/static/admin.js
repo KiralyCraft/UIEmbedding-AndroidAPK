@@ -2,6 +2,7 @@
 const $ = (id) => document.getElementById(id);
 let csrf = "",
   users = [],
+  isAdmin = false,
   selected = null,
   resetUser = null;
 const base = new URL("./", location.href);
@@ -121,25 +122,34 @@ async function refresh() {
   );
   table(
     $("user-list"),
-    ["Participant", "Status", "Devices", "Embeddings", "Manage"],
+    [
+      "Participant",
+      "Created by",
+      "Created",
+      "Status",
+      "Devices",
+      "Embeddings",
+      "Actions",
+    ],
     users.map((u) => {
       const actions = element("div");
-      actions.append(
-        action("Devices", () => openDevices(u)),
-        action("Password", () => {
-          resetUser = u;
-          $("reset-for").textContent = u.username;
-          $("password-dialog").showModal();
-        }),
-        action("Revoke sessions", async () => {
-          if (confirm("Sign out " + u.username + " on every device?")) {
-            await api("admin/users/" + u.id + "/revoke", "POST");
-            notify("Sessions revoked");
-            await refresh();
-          }
-        }),
-      );
-      if (!u.administrator)
+      actions.append(action("Devices", () => openDevices(u)));
+      if (isAdmin)
+        actions.append(
+          action("Password", () => {
+            resetUser = u;
+            $("reset-for").textContent = u.username;
+            $("password-dialog").showModal();
+          }),
+          action("Revoke sessions", async () => {
+            if (confirm("Sign out " + u.username + " on every device?")) {
+              await api("admin/users/" + u.id + "/revoke", "POST");
+              notify("Sessions revoked");
+              await refresh();
+            }
+          }),
+        );
+      if (isAdmin && !u.administrator)
         actions.append(
           action(
             u.active ? "Disable" : "Enable",
@@ -157,6 +167,8 @@ async function refresh() {
         );
       return [
         u.username + (u.administrator ? " · Admin" : ""),
+        u.created_by || "Not recorded",
+        u.created_ms ? date(u.created_ms) : "—",
         element(
           "span",
           u.active ? "Active" : "Disabled",
@@ -167,6 +179,12 @@ async function refresh() {
         actions,
       ];
     }),
+  );
+  const created = await api("account/creations");
+  table(
+    $("created-list"),
+    ["Account you created", "Created"],
+    created.map((u) => [u.username, date(u.created_ms)]),
   );
   $("updated").textContent = "Updated " + new Date().toLocaleTimeString();
   if (selected && !$("device-page").hidden) await openDevices(selected);
@@ -269,20 +287,21 @@ async function openDevices(user) {
         d.active ? "danger" : "secondary",
       ),
     );
-    card.append(
-      element(
-        "p",
-        "Disabling blocks uploads; the phone can continue recording locally. After enabling, tap Retry upload in the Android app.",
-        "muted",
-      ),
-    );
+    if (isAdmin)
+      card.append(
+        element(
+          "p",
+          "Disabling blocks uploads; the phone can continue recording locally. After enabling, tap Retry upload in the Android app.",
+          "muted",
+        ),
+      );
     card.append(
       element(
         "span",
         d.active ? "Uploads enabled" : "Uploads disabled",
         "badge" + (d.active ? "" : " off"),
       ),
-      form,
+      ...(isAdmin ? [form] : []),
     );
     $("devices").append(card);
   }
@@ -290,6 +309,12 @@ async function openDevices(user) {
 }
 async function signedIn(session) {
   csrf = session.csrf;
+  isAdmin = session.administrator;
+  selected = null;
+  page("overview");
+  $("people-description").textContent = isAdmin
+    ? "Manage access and inspect each device independently."
+    : "View your devices and create accounts for other participants. Only administrators can manage their access or see their recordings.";
   $("identity").textContent = session.username;
   $("signin").hidden = true;
   $("dashboard").hidden = false;
@@ -315,7 +340,7 @@ $("new-user").onsubmit = async (e) => {
   e.preventDefault();
   try {
     await api(
-      "admin/users",
+      "account/users",
       "POST",
       Object.fromEntries(new FormData(e.target)),
     );

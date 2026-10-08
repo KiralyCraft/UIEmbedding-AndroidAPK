@@ -12,8 +12,7 @@
       <div class="brand">UI<span>Embeddings</span></div>
       <h1>Capture, accounted for.</h1>
       <p>
-        Sign in to manage participants and follow collection across their
-        devices.
+        Sign in to view your devices and create accounts for other participants.
       </p>
       <form id="login">
         <label
@@ -80,10 +79,16 @@
         </section>
         <section id="people" hidden>
           <div class="toolbar">
-            <p>Manage access and inspect each device independently.</p>
+            <p id="people-description">
+              Manage access and inspect each device independently.
+            </p>
             <button id="add-user">Create user</button>
           </div>
           <div id="user-list"></div>
+          <article>
+            <h2>Accounts you created</h2>
+            <div id="created-list"></div>
+          </article>
         </section>
         <section id="device-page" hidden>
           <button id="back" class="secondary">← All people</button>
@@ -95,6 +100,11 @@
     <dialog id="user-dialog">
       <form id="new-user">
         <h2>Create participant</h2>
+        <p>
+          Your account will be recorded as the creator. Share these credentials
+          directly with the participant. No email is sent. Participants can
+          create up to 20 accounts per day.
+        </p>
         <label
           >Username<input
             name="username"

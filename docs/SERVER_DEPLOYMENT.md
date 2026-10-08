@@ -1,6 +1,6 @@
 # UI Embeddings deployment
 
-The capture service and administrator console are at **https://kiralycraft.com/projects/uiembeddings/**. Use this same address in the Android application's server settings. Administrators create participant accounts in **People & devices**; there is no public registration.
+The capture service and administrator console are at **https://kiralycraft.com/projects/uiembeddings/**. Use this same address in the Android application's server settings. Signed-in users create participant accounts in **People & devices**; there is no anonymous registration.
 
 ## Infrastructure
 
@@ -40,7 +40,7 @@ cd /opt/uiembeddings/server
 ../venv/bin/python -m collector.cli create-user another-admin --admin
 ```
 
-Browser sessions last eight hours, use Secure/HttpOnly/SameSite=Strict cookies scoped to the project path, and require CSRF tokens for changes. Participants use the existing bearer-token API and cannot access administration. Public pages disclose no participant statistics.
+Browser sessions last eight hours, use Secure/HttpOnly/SameSite=Strict cookies scoped to the project path, and require CSRF tokens for changes. Participants can also sign in to the web console, view only their own device statistics, and create other participant accounts. Password resets, account/device controls, and other users' recording statistics remain administrator-only. Public pages disclose no participant statistics.
 
 Each device is identified by **(user ID, installation UUID)**, not its model name. A participant can use multiple phones, including identical models. Run ordinals remain separate per user/device/application. Devices register automatically on the first run or calibration upload; reinstalling the Android application creates a new device identity.
 
@@ -94,3 +94,21 @@ systemctl restart uiembeddings
 ```
 
 It only creates `login_rate_limits` if absent. A database snapshot was taken at `/var/backups/uiembeddings/before-rate-limit.sql.gz` before the live migration. Tests cover atomic concurrent admission, shared endpoints/workers, persistence, expiry, longer-window enforcement, spoofed forwarding headers and continued authenticated ingestion. The live HTTPS probe returned 30 HTTP 401 responses followed by HTTP 429 while changing its forged forwarding header on every request. The stored long-window counter survived a service restart, and the short-window limit expired normally.
+
+
+## Account creation history
+
+Every account created through the web console records an immutable creator user ID and server creation time in `account_creations`, in the same transaction as the new account. Administrators see **Created by** and **Created** for each person; participants see **Accounts you created**, containing only their direct creations. Creating an account does not grant access to its recordings, devices, password controls or sessions. New accounts are always participants. Share the chosen credentials directly; this flow does not send email or generate invitation links.
+
+Participant creators are limited to 20 successful creations per rolling 24 hours, serialized by a database lock across workers. Administrators are exempt. Existing shared login limits, CSRF checks, revocation and disabled-account checks apply to participant web sessions too. Historical accounts with no recorded provenance explicitly show **Not recorded**, rather than inventing a creator or timestamp. CLI bootstrap accounts also have no recorded web creator.
+
+Before deploying this version on an existing database, back up source and database, copy updated code, then run (as root with the environment exported and cwd `/opt/uiembeddings/server`):
+
+```bash
+../venv/bin/python -m collector.cli upgrade-account-creations
+systemctl restart uiembeddings
+```
+
+This additive, repeatable migration creates only the new history table. Existing credentials, sessions and capture records are preserved.
+
+Account-creation update validation: 50 tests pass on SQLite and on isolated MariaDB, including participant access boundaries, creator attribution, nested creations, disabled creators, CSRF, rolling limits, concurrent quota admission and repeatable migration. Live web checks confirm creator attribution and participant-only statistics at desktop and 390-pixel mobile width.
