@@ -2,7 +2,7 @@
 
 These tests are **instructions, not claims that the supplied source has passed them**. Use a dedicated test install/account. Preserve your deployed model manifest, APK, signing key and dependency versions once validated.
 
-The initial server-free Xperia checks have now passed; see [2026-10-08 results](../reports/device-20261008/RESULTS.md). `05_test_device_inference.sh ADB_SERIAL` reproduces only the GPU and synthetic preprocessing checks and does not run destructive outbox tests. The remaining capture and server checks below are still required.
+See [measured Xperia results](../reports/DEVICE_RESULTS.md) for completed checks. `05_test_device_inference.sh ADB_SERIAL` reproduces GPU and synthetic preprocessing checks. `tools/continuous_capture_smoke.py` covers the controlled continuous-capture workflow; the remaining deployment checks below must be assessed separately.
 
 ## Build and numeric checks
 
@@ -10,7 +10,7 @@ Run `00_export_model.sh` and retain its complete output. Require all nine synthe
 
 Run `01_build_apk.sh`. No successful build or APK is included in the delivery archive. Run host tests and inspect warnings/errors rather than skipping them. In Android Studio, inspect the merged manifest for mediaProjection foreground service, usage/accessibility permissions, disabled backups, no cleartext traffic and the optional OpenCL native library declaration.
 
-On the actual device, run `connectedDebugAndroidTest` only after confirming its queue contains no valuable data. The outbox instrumentation suite deletes the test installation's queue deliberately. A real GPU is required for the GPU parity test; an emulator using CPU rendering is not evidence of target-phone GPU performance.
+Outbox instrumentation uses isolated randomly named databases and removes only those test databases. Permission UI tests require their documented initial permission/onboarding state. The recorded-visits test requires the controlled capture helper first. Select each suite explicitly on the intended device. A real GPU is required for GPU parity; an emulator using CPU rendering is not evidence of target-phone GPU performance.
 
 ```bash
 adb shell getprop ro.build.version.release
@@ -37,7 +37,7 @@ Leave an app static. The recorder should avoid synthesizing duplicate time-grid 
 
 Open a keyboard, notification shade, split-screen, PiP and excluded apps. This build deliberately pauses/splits rather than assigning mixed screen content to an app. Verify it resumes when the unambiguous allowed app returns. Check task-switch recents thumbnails and protected/blank surfaces are not assumed to be ordinary application screens.
 
-Lock/unlock, stop from the projection chip, revoke Usage Access/Accessibility, stop from the foreground notification, and kill the process. The recorder must never silently continue capture without valid consent. Reopen and grant fresh consent where required. Queued data must survive all cases except explicit app data clearing/uninstall/key loss.
+For Continuous Accessibility capture, lock/off must pause collection and unlock must resume the requested session without a screen-sharing dialog. Explicit Stop must clear the resume request. For Fast MediaProjection sessions, lock or the projection chip ends consent and requires a new grant. Revoke Usage Access/Accessibility, stop from the foreground notification, and kill the process. Recording requires valid grants and a prior explicit start. Queued data must survive all cases except explicit app data clearing/uninstall/key loss.
 
 ## Offline and database tests
 
@@ -47,7 +47,7 @@ Lock/unlock, stop from the projection chip, revoke Usage Access/Accessibility, s
 4. Set a small queue limit and fill it offline. Capture must pause without evicting old samples, and automatically resume after upload frees sufficient payload/free-disk space. Check available disk as well as the payload counter.
 5. Revoke the session token while recording offline. A 401 must retain the queue. Stop capture, reauthenticate to the same account and confirm delivery. Attempt another account/URL and confirm cached data is not uploaded under it.
 6. Submit the same sample with changed metadata/vector bytes: expect 409 and no partial commit. Submit unknown model, malformed vector, NaN, non-normalized vector, foreign run ID, too-large body and unexpected screenshot field. Check that errors do not echo sensitive payloads.
-7. Test concurrent uploads against a **separate disposable MySQL 8.4 instance**, including simultaneous first runs for the same package and identical retries. The supplied 30 executed server tests use SQLite, not InnoDB; MySQL locking/deadlock behavior still needs this integration test.
+7. Test concurrent uploads against a **separate disposable MySQL 8.4 instance**, including simultaneous first runs for the same package and identical retries. The 32 executed server tests use SQLite, not InnoDB; MySQL locking/deadlock behavior still needs this integration test.
 8. Export complete runs. Check arrays are float32 `(T,384)`, row count equals metadata count, sequence has no gaps, and times increase within each run. Verify incomplete runs are absent from default export and cross-account data is inaccessible.
 
 ## Storage and operations

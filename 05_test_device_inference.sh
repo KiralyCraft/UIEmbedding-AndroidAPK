@@ -20,7 +20,7 @@ adb -s "$SERIAL" shell am instrument -w -r \
     ro.ubb.uicollector.test/androidx.test.runner.AndroidJUnitRunner | tee "$REPORT/instrumentation.txt"
 adb -s "$SERIAL" logcat -d -T "$START" -s tflite UICollectorInference > "$REPORT/gpu-logcat.txt"
 # `am instrument` can exit zero even when a test fails; require JUnit's success summary.
-if ! rg -q '^OK \(2 tests\)' "$REPORT/instrumentation.txt"; then
+if ! rg -q '^OK \(3 tests\)' "$REPORT/instrumentation.txt"; then
     echo "Device inference failed; see $REPORT/instrumentation.txt" >&2
     exit 1
 fi

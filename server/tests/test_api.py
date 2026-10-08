@@ -183,3 +183,15 @@ def test_activity_provenance_cannot_contradict_value(system, payload):
 def test_package_cannot_escape_export_directory(system, payload, package):
     payload["run"]["package_name"] = package
     assert post(system, payload).status_code == 422
+
+
+def test_opencl_mode_metadata_is_accepted_and_legacy_defaults_remain(system, payload):
+    payload["samples"][0].update(processing_backend="litert_opencl_full_encoder", preprocessing_backend="opencl", capture_source="accessibility", sampling_mode="BATTERY_SAVER", head_ms=0.0)
+    response=system["client"].post("/v1/ingest",json=payload,headers=system["headers"])
+    assert response.status_code == 200
+
+
+def test_invalid_processing_backend_is_rejected(system, payload):
+    payload["samples"][0]["processing_backend"]="fabricated_gpu"
+    response=system["client"].post("/v1/ingest",json=payload,headers=system["headers"])
+    assert response.status_code == 422

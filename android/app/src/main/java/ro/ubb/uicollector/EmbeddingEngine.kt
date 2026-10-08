@@ -5,6 +5,7 @@ import android.os.SystemClock
 import org.json.JSONObject
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.GpuDelegate
+import org.tensorflow.lite.gpu.GpuDelegateFactory
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -12,16 +13,17 @@ import java.nio.channels.FileChannel
 import java.security.MessageDigest
 
 /** Create, invoke and close this object on ONE dedicated HandlerThread. No CPU fallback. */
-class EmbeddingEngine(private val context: Context) : AutoCloseable
+class EmbeddingEngine(private val context: Context, private val fullEncoder: Boolean = true) : AutoCloseable
 {
     val manifest: JSONObject = JSONObject(context.assets.open("f6_manifest.json").bufferedReader().use { it.readText() })
     val modelId: String = manifest.getString("model_id")
     private val ownerThread = Thread.currentThread().id
     private var delegate: GpuDelegate? = null
     private var interpreter: Interpreter? = null
-    private val head: EmbeddingHead
-    private val features = FloatArray(960)
-    private val output = ByteBuffer.allocateDirect(960 * 4).order(ByteOrder.nativeOrder())
+    val backend: String = if (fullEncoder) "litert_opencl_full_encoder" else "litert_gpu_backbone_cpu_head"
+    private val head: EmbeddingHead?
+    private val features = FloatArray(if (fullEncoder) 384 else 960)
+    private val output = ByteBuffer.allocateDirect(features.size * 4).order(ByteOrder.nativeOrder())
     var inferenceMs = 0.0
         private set
     var headMs = 0.0
@@ -37,16 +39,18 @@ class EmbeddingEngine(private val context: Context) : AutoCloseable
         files.keys().forEach {
             check(hashAsset(it) == files.getString(it)) { "Asset checksum mismatch: $it" }
         }
-        head = EmbeddingHead(context.assets.open("f6_head.bin").use { it.readBytes() })
+        head = if (fullEncoder) null else EmbeddingHead(context.assets.open("f6_head.bin").use { it.readBytes() })
         try
         {
             val options = GpuDelegate.Options()
             options.setPrecisionLossAllowed(false)
             options.setInferencePreference(GpuDelegate.Options.INFERENCE_PREFERENCE_SUSTAINED_SPEED)
+            if (fullEncoder) options.setForceBackend(GpuDelegateFactory.Options.GpuBackend.OPENCL)
+            options.setSerializationParams(context.codeCacheDir.absolutePath, "${modelId}_$backend")
             delegate = GpuDelegate(options)
-            interpreter = Interpreter(mappedAsset("f6_backbone.tflite"), Interpreter.Options().addDelegate(delegate!!).setNumThreads(1).setUseXNNPACK(false))
+            interpreter = Interpreter(mappedAsset(if (fullEncoder) "f6_encoder.tflite" else "f6_backbone.tflite"), Interpreter.Options().addDelegate(delegate!!).setNumThreads(1).setUseXNNPACK(false))
             check(interpreter!!.getInputTensor(0).shape().contentEquals(intArrayOf(1, 800, 384, 3)))
-            check(interpreter!!.getOutputTensor(0).shape().contentEquals(intArrayOf(1, 960)))
+            check(interpreter!!.getOutputTensor(0).shape().contentEquals(intArrayOf(1, features.size)))
             val bytes = context.assets.open("golden_input.bin").use { it.readBytes() }
             val input = ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder())
             input.put(bytes).rewind()
@@ -73,10 +77,14 @@ class EmbeddingEngine(private val context: Context) : AutoCloseable
         val gpuEnd = SystemClock.elapsedRealtimeNanos()
         output.rewind()
         output.asFloatBuffer().get(features)
-        val value = head.encode(features)
+        val value = head?.encode(features) ?: features.copyOf().also { vector ->
+            check(vector.all { it.isFinite() })
+            val norm = kotlin.math.sqrt(vector.sumOf { it.toDouble() * it })
+            check(kotlin.math.abs(norm - 1.0) < 1e-4) { "Invalid GPU embedding norm=$norm" }
+        }
         val end = SystemClock.elapsedRealtimeNanos()
         inferenceMs = (gpuEnd - start) / 1e6
-        headMs = (end - gpuEnd) / 1e6
+        headMs = if (fullEncoder) 0.0 else (end - gpuEnd) / 1e6
         return value
     }
 
@@ -102,6 +110,15 @@ class EmbeddingEngine(private val context: Context) : AutoCloseable
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    companion object {
+        fun create(context: Context): EmbeddingEngine {
+            return try { EmbeddingEngine(context) } catch(error: IllegalStateException) {
+                android.util.Log.w("UICollectorInference", "Full OpenCL encoder unavailable; using GPU backbone and CPU head", error)
+                EmbeddingEngine(context, false)
+            }
+        }
     }
 
     override fun close()

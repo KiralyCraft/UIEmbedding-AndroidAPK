@@ -222,6 +222,37 @@ def main() -> None:
         def encode(self, image):
             return translator(image)
 
+    class FullDeployment(tf.Module):
+        @tf.function(input_signature=[tf.TensorSpec([1, 800, 384, 3], tf.float32, name="normalized_rgb")], autograph=False)
+        def encode(self, image):
+            value = tf.reshape(translator(image), [1, 1, 1, 960])
+            state = payload["student_model_state_dict"]
+            prefix = "embedding_head.network."
+            first = tf.constant(state[prefix + "0.weight"].numpy().T.reshape(1, 1, 960, 384))
+            value = tf.nn.bias_add(tf.nn.conv2d(value, first, 1, "VALID"), tf.constant(state[prefix + "0.bias"].numpy()))
+            centered = value - tf.reduce_mean(value, -1, keepdims=True)
+            variance = tf.reduce_mean(tf.square(centered), -1, keepdims=True)
+            value = centered * tf.math.rsqrt(variance + tf.constant(1e-5))
+            value = value * tf.constant(state[prefix + "1.weight"].numpy()) + tf.constant(state[prefix + "1.bias"].numpy())
+            value = tf.nn.gelu(value, approximate=False)
+            last = tf.constant(state[prefix + "4.weight"].numpy().T.reshape(1, 1, 384, 384))
+            value = tf.nn.conv2d(value, last, 1, "VALID")
+            # Mean*dimension avoids conversion to a CPU-only L2_NORMALIZATION op.
+            norm_squared = tf.reduce_mean(tf.square(value), -1, keepdims=True) * tf.constant(384.)
+            value *= tf.math.rsqrt(tf.maximum(norm_squared, tf.constant(1e-24)))
+            return tf.reshape(value, [1, 384])
+
+    full_deployment = FullDeployment()
+    full_converter = tf.lite.TFLiteConverter.from_concrete_functions([full_deployment.encode.get_concrete_function()], full_deployment)
+    full_converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS]
+    full_converter.optimizations = []
+    full_bytes = full_converter.convert()
+    full_lite = tf.lite.Interpreter(model_content=full_bytes, num_threads=1, experimental_op_resolver_type=tf.lite.experimental.OpResolverType.BUILTIN_WITHOUT_DEFAULT_DELEGATES)
+    full_lite.allocate_tensors()
+    full_ops = sorted({entry["op_name"] for entry in full_lite._get_ops_details()})
+    reviewed_full_ops = {"CONV_2D", "DEPTHWISE_CONV_2D", "ADD", "MUL", "SUB", "PAD", "AVERAGE_POOL_2D", "RESHAPE", "RELU", "RELU6", "MEAN", "SQUARE", "SQUARED_DIFFERENCE", "RSQRT", "MAXIMUM", "GELU"}
+    if set(full_ops) - reviewed_full_ops:
+        raise ValueError(f"Unreviewed complete-encoder operations: {set(full_ops) - reviewed_full_ops}")
     deployment = Deployment()
     concrete = deployment.encode.get_concrete_function()
     converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete], deployment)
@@ -249,6 +280,7 @@ def main() -> None:
             inputs.append(preprocess(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)))
     checks = []
     golden = None
+    synthetic_expected = []
     with torch.inference_mode():
         for index, value in enumerate(inputs):
             nchw = torch.from_numpy(value.transpose(0, 3, 1, 2).copy())
@@ -262,24 +294,34 @@ def main() -> None:
             features = lite.get_tensor(output_spec["index"])
             actual = student.embedding_head(torch.from_numpy(features)).numpy()
             checks.append(compare(expected, actual, f"pytorch_vs_litert_embedding_{index}", .99999, .0005))
+            full_lite.set_tensor(full_lite.get_input_details()[0]["index"], value)
+            full_lite.invoke()
+            checks.append(compare(expected, full_lite.get_tensor(full_lite.get_output_details()[0]["index"]), f"pytorch_vs_full_encoder_{index}", .99999, .0005))
+            if index < 9:
+                synthetic_expected.append(expected)
             if index == 0:
                 golden = expected
     with tempfile.TemporaryDirectory(prefix="f6-assets-") as temporary:
         staged = Path(temporary)
         (staged / "f6_backbone.tflite").write_bytes(model_bytes)
+        (staged / "f6_encoder.tflite").write_bytes(full_bytes)
         (staged / "f6_head.bin").write_bytes(head_bytes(payload["student_model_state_dict"]))
         (staged / "golden_input.bin").write_bytes(inputs[0].astype("<f4").tobytes())
         (staged / "golden_embedding.bin").write_bytes(golden.astype("<f4").tobytes())
         hashes = {p.name: sha256(p) for p in staged.iterdir()}
-        identity = {"deployment_schema": 1, "preprocessing": "f6_fit_pad_opencv_nhwc_v1", "asset_sha256": hashes}
+        identity = {"deployment_schema": 2, "preprocessing": "f6_fit_pad_opencv_nhwc_v1", "asset_sha256": hashes}
         model_id = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-        manifest = {**identity, "model_id": model_id, "export_parity_passed": True, "embedding_dim": 384, "backbone_feature_dim": 960, "input_shape": [1, 800, 384, 3], "backend": "litert_gpu_backbone_cpu_head", "weights_sha256": provenance["weights_sha256"], "checkpoint_step": payload["step"], "normalization_mean": [.485, .456, .406], "normalization_std": [.229, .224, .225], "padding_rgb": [124, 116, 104], "gpu_operator_allowlist": ops, "pytorch_version": torch.__version__, "timm_version": timm.__version__, "tensorflow_version": tf.__version__, "parity": checks, "gpu_on_device_validated": False}
+        manifest = {**identity, "model_id": model_id, "export_parity_passed": True, "embedding_dim": 384, "backbone_feature_dim": 960, "input_shape": [1, 800, 384, 3], "backend": "litert_opencl_full_encoder", "full_encoder_operator_allowlist": full_ops, "weights_sha256": provenance["weights_sha256"], "checkpoint_step": payload["step"], "normalization_mean": [.485, .456, .406], "normalization_std": [.229, .224, .225], "padding_rgb": [124, 116, 104], "gpu_operator_allowlist": ops, "pytorch_version": torch.__version__, "timm_version": timm.__version__, "tensorflow_version": tf.__version__, "parity": checks, "gpu_on_device_validated": False}
         for path in staged.iterdir():
             shutil.copy2(path, args.output / path.name)
         # The success manifest is the final commit marker.
         manifest_file = args.output / "f6_manifest.json.tmp"
         manifest_file.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         manifest_file.replace(args.output / "f6_manifest.json")
+    fixtures = root / "android/app/src/androidTest/assets"
+    fixtures.mkdir(parents=True, exist_ok=True)
+    (fixtures / "synthetic_inputs.bin").write_bytes(np.concatenate(inputs[:9]).astype("<f4").tobytes())
+    (fixtures / "synthetic_embeddings.bin").write_bytes(np.concatenate(synthetic_expected).astype("<f4").tobytes())
     print(f"Export passed {len(checks)} checks. model_id={model_id}\nAssets: {args.output}\nPhone GPU parity and device acceptance are still required.")
 
 

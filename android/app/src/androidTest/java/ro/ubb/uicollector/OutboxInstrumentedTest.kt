@@ -9,24 +9,25 @@ import org.junit.Before
 import org.junit.Test
 import java.util.UUID
 
-/** Run only on a test install: setUp/tearDown intentionally empty its local outbox. */
+/** Isolated test database: never purges the application's production outbox. */
 class OutboxInstrumentedTest
 {
     private lateinit var store: LocalStore
     private lateinit var vault: Vault
     private val owner = "test-owner"
+    private val databaseName="outbox-test-${UUID.randomUUID()}.db"
 
     @Before
     fun prepare()
     {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         vault = Vault(context)
-        store = LocalStore(context, vault)
+        store = LocalStore(context, vault, databaseName)
         store.purgePending()
     }
 
     @After
-    fun clean() { store.purgePending(); store.close() }
+    fun clean() { store.close(); InstrumentationRegistry.getInstrumentation().targetContext.deleteDatabase(databaseName) }
 
     @Test
     fun databaseOpensWithWalAndFullSynchronization()
@@ -43,6 +44,60 @@ class OutboxInstrumentedTest
             assertTrue(it.moveToFirst())
             assertEquals(256, it.getInt(0))
         }
+    }
+
+    @Test
+    fun unboundLocalTransferPreservesPayloadAndCannotRebindAccounts() {
+        val local="local:test-install"
+        val destination="a".repeat(64)
+        val id=UUID.randomUUID().toString()
+        store.createRun(local,JSONObject().put("id",id).put("revision",1).put("start_wall_ms",System.currentTimeMillis()).put("start_elapsed_ns",android.os.SystemClock.elapsedRealtimeNanos()))
+        val sample=JSONObject().put("sequence",0).put("wall_ms",System.currentTimeMillis()).put("elapsed_ns",android.os.SystemClock.elapsedRealtimeNanos()).put("embedding_b64","original-vector")
+        assertTrue(store.append(id,local,sample,1024*1024))
+        assertTrue(runCatching { store.adoptLocal(local,destination) }.isFailure) // Active run must remain local.
+        assertNotNull(store.nextBatch(local))
+        store.closeRun(id,"test_stop")
+        val before=store.nextBatch(local)!!.toString()
+        store.adoptLocal(local,destination)
+        assertNull(store.nextBatch(local))
+        assertEquals(before,store.nextBatch(destination)!!.toString())
+        assertEquals(1L,store.ownerStats(destination).second)
+        assertTrue(runCatching { store.adoptLocal(destination,"b".repeat(64)) }.isFailure)
+    }
+
+    @Test
+    fun corruptedLocalPayloadRollsBackAllOwnerChanges() {
+        val local="local:rollback"
+        val id=UUID.randomUUID().toString()
+        store.createRun(local,JSONObject().put("id",id).put("revision",1).put("start_wall_ms",System.currentTimeMillis()).put("start_elapsed_ns",android.os.SystemClock.elapsedRealtimeNanos()))
+        assertTrue(store.append(id,local,JSONObject().put("sequence",0).put("wall_ms",System.currentTimeMillis()).put("elapsed_ns",android.os.SystemClock.elapsedRealtimeNanos()).put("embedding_b64","vector"),1024*1024))
+        store.closeRun(id,"test_stop")
+        store.writableDatabase.execSQL("UPDATE samples SET payload=? WHERE run_id=?",arrayOf(byteArrayOf(1,2,3),id))
+        assertTrue(runCatching { store.adoptLocal(local,"a".repeat(64)) }.isFailure)
+        store.readableDatabase.rawQuery("SELECT owner FROM runs WHERE id=?",arrayOf(id)).use { assertTrue(it.moveToFirst());assertEquals(local,it.getString(0)) }
+        assertEquals(1L,store.queueStats().second)
+    }
+
+    @Test
+    fun transferTraversesMultipleCursorWindowsWithoutSkippingRunsOrReports() {
+        val source="local:window-test"
+        val destination="c".repeat(64)
+        val db=store.writableDatabase
+        db.beginTransaction()
+        try {
+            repeat(600) {
+                val id=UUID.randomUUID().toString()
+                store.createRun(source,JSONObject().put("id",id).put("revision",1).put("start_wall_ms",System.currentTimeMillis())
+                    .put("start_elapsed_ns",android.os.SystemClock.elapsedRealtimeNanos()).put("synthetic_padding","x".repeat(5000)))
+                store.closeRun(id,"fixture")
+                store.saveReport(source,JSONObject().put("id",UUID.randomUUID().toString()).put("synthetic_padding","y".repeat(5000)))
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        store.adoptLocal(source,destination)
+        assertFalse(store.hasPending(source))
+        db.rawQuery("SELECT COUNT(*) FROM runs WHERE owner=?",arrayOf(destination)).use { assertTrue(it.moveToFirst());assertEquals(600,it.getInt(0)) }
+        db.rawQuery("SELECT COUNT(*) FROM reports WHERE owner=?",arrayOf(destination)).use { assertTrue(it.moveToFirst());assertEquals(600,it.getInt(0)) }
     }
 
     private fun run(): String

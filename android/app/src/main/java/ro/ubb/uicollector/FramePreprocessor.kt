@@ -19,9 +19,9 @@ class FramePreprocessor : AutoCloseable
     private val rgb = Mat()
     private val resized = Mat()
     private val canvas = Mat(800, 384, CvType.CV_8UC3)
-    private val normalized = Mat()
-    private val floats = FloatArray(800 * 384 * 3)
-    val input: ByteBuffer = ByteBuffer.allocateDirect(floats.size * 4).order(ByteOrder.nativeOrder())
+    val input: ByteBuffer = ByteBuffer.allocateDirect(800 * 384 * 3 * 4).order(ByteOrder.nativeOrder())
+    // OpenCV writes directly into LiteRT's input buffer, avoiding two full tensor copies.
+    private val normalized = Mat(800, 384, CvType.CV_32FC3, input)
     var sourceWidth = 0
         private set
     var sourceHeight = 0
@@ -31,12 +31,12 @@ class FramePreprocessor : AutoCloseable
     var imageTimestampNs = 0L
         private set
 
-    fun ingest(image: Image)
+    fun ingest(image: Image) = ingest(CapturedFrame.from(image))
+
+    fun ingest(image: CapturedFrame)
     {
-        val plane = image.planes[0]
-        require(plane.pixelStride == 4) { "RGBA ImageReader pixel stride must be 4" }
         val crop = image.cropRect
-        val wrapped = Mat(image.height, image.width, CvType.CV_8UC4, plane.buffer, plane.rowStride.toLong())
+        val wrapped = Mat(image.height, image.width, CvType.CV_8UC4, image.buffer, image.rowStride.toLong())
         val region = wrapped.submat(Rect(crop.left, crop.top, crop.width(), crop.height()))
         try
         {
@@ -67,9 +67,7 @@ class FramePreprocessor : AutoCloseable
         canvas.convertTo(normalized, CvType.CV_32FC3, 1.0 / 255.0)
         Core.subtract(normalized, Scalar(0.485, 0.456, 0.406), normalized)
         Core.divide(normalized, Scalar(0.229, 0.224, 0.225), normalized)
-        normalized.get(0, 0, floats)
         input.rewind()
-        input.asFloatBuffer().put(floats)
         return input
     }
 

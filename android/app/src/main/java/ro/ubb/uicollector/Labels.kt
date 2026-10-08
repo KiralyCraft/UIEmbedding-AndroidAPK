@@ -15,9 +15,34 @@ import android.graphics.Rect
 /** Never contains screen text or a view hierarchy. */
 data class AppLabel(val packageName: String, val activity: String?, val windowClass: String?, val generation: Long, val ageMs: Long, val settled: Boolean)
 
+/** Tracks the currently bound service instance so stale lifecycle callbacks are harmless. */
+class AccessibilityConnectionState
+{
+    @Volatile private var owner: Any? = null
+
+    @Synchronized
+    fun connect(token: Any): Boolean
+    {
+        if (owner === token) { return false }
+        owner = token
+        return true
+    }
+
+    @Synchronized
+    fun disconnect(token: Any): Boolean
+    {
+        if (owner !== token) { return false }
+        owner = null
+        return true
+    }
+
+    fun isConnected(): Boolean = owner != null
+    fun owns(token: Any): Boolean = owner === token
+}
+
 class LabelTracker(private val context: Context)
 {
-    private var connected = false
+    private val connectionState = AccessibilityConnectionState()
     private var windowPackage: String? = null
     private var windowClass: String? = null
     private var windowId = -1
@@ -32,6 +57,8 @@ class LabelTracker(private val context: Context)
     @Volatile var status = "Enable accessibility labels and usage access"
         private set
 
+    fun isConnected(): Boolean = connectionState.isConnected()
+
     fun hasUsagePermission(): Boolean
     {
         val manager = context.getSystemService(AppOpsManager::class.java)
@@ -39,19 +66,24 @@ class LabelTracker(private val context: Context)
     }
 
     @Synchronized
-    fun connection(value: Boolean)
+    fun connection(token: Any, value: Boolean)
     {
-        if (connected != value)
+        val changedConnection = if (value) connectionState.connect(token) else connectionState.disconnect(token)
+        if (changedConnection)
         {
-            connected = value
+            windowPackage = null
+            windowClass = null
+            windowId = -1
+            unsafeReason = if (value) "Waiting for an accessibility window event" else "Accessibility labeling not connected"
+            status = if (value) "Waiting for a foreground window event" else "Accessibility service disconnected"
             changed()
         }
     }
 
     @Synchronized
-    fun windowState(packageName: String?, className: String?, eventWindowId: Int, focusedWindowId: Int, reason: String?)
+    fun windowState(token: Any, packageName: String?, className: String?, eventWindowId: Int, focusedWindowId: Int, reason: String?)
     {
-        connected = true
+        if (!connectionState.owns(token)) { return }
         if (windowId != focusedWindowId || unsafeReason != reason)
         {
             windowId = focusedWindowId
@@ -125,7 +157,7 @@ class LabelTracker(private val context: Context)
     @Synchronized
     fun snapshot(): AppLabel?
     {
-        if (connected == false) { status = "Accessibility service disconnected"; return null }
+        if (!connectionState.isConnected()) { status = "Accessibility service disconnected"; return null }
         if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) { status = "Device locked"; return null }
         if (hasUsagePermission() == false) { status = "Usage access revoked"; return null }
         if (unsafeReason != null) { status = unsafeReason!!; return null }
@@ -150,7 +182,10 @@ class LabelAccessibilityService : AccessibilityService()
 
     override fun onServiceConnected()
     {
-        app.labels.connection(true)
+        super.onServiceConnected()
+        app.labels.connection(this, true)
+        app.accessibilityService=this
+        app.resumeRequestedRecording()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?)
@@ -182,9 +217,16 @@ class LabelAccessibilityService : AccessibilityService()
         root?.recycle()
         val sameWindow = event.windowId == focused?.id
         val packageName = focusedPackage ?: if (isState && sameWindow) event.packageName?.toString() else null
-        app.labels.windowState(packageName, if (isState && sameWindow) event.className?.toString()?.take(512) else null, focused?.id ?: -1, focused?.id ?: -1, reason)
+        app.labels.windowState(this, packageName, if (isState && sameWindow) event.className?.toString()?.take(512) else null, focused?.id ?: -1, focused?.id ?: -1, reason)
     }
 
-    override fun onInterrupt() { app.labels.connection(false) }
-    override fun onDestroy() { app.labels.connection(false); super.onDestroy() }
+    // Android interrupts feedback without unbinding the service (for example when
+    // another accessibility client requests control). This is not loss of permission.
+    override fun onInterrupt() {}
+    private fun disconnected() {
+        app.labels.connection(this,false)
+        if(app.accessibilityService===this) app.accessibilityService=null
+    }
+    override fun onUnbind(intent: android.content.Intent?): Boolean { disconnected(); return super.onUnbind(intent) }
+    override fun onDestroy() { disconnected(); super.onDestroy() }
 }

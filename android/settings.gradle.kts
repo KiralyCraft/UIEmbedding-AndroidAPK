@@ -14,3 +14,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "UIEmbeddingCollector"
 include(":app")
+
+include(":fixture")

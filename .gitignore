@@ -28,3 +28,5 @@ reports/*
 *.keystore
 
 .venv*
+
+**/.cxx/

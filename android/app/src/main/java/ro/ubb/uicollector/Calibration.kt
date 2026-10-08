@@ -4,9 +4,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** Paces real capture/resize/inference/spool probes rather than timing the CNN alone. */
-class Calibration
+class Calibration(maximumFps: Double = 30.0)
 {
-    private val rates = listOf(0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0, 30.0)
+    private val rates = (listOf(0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0, 30.0).filter { it<=maximumFps } + maximumFps).distinct().sorted()
     private var index = 0
     private var phaseStart = 0L
     private var warmups = 8
@@ -23,6 +23,10 @@ class Calibration
         private set
     val fps get() = if (confirming) selectedFps else rates[index]
     val description get() = if (confirming) "Sustained calibration at $selectedFps fps" else "Calibration ${index + 1}/${rates.size}: ${rates[index]} fps"
+
+    val progress: Float get() = if(finished) 1f else if(confirming) .9f else index * .9f / rates.size
+
+    fun restartWindow() { timings.clear();fresh=0;missed=0;phaseStart=0L;warmups=2 }
 
     fun record(startMs: Long, endMs: Long, workMs: Double, wasFresh: Boolean, late: Boolean): Boolean
     {

@@ -7,7 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONObject
 import org.json.JSONArray
 
-class LocalStore(context: Context, private val vault: Vault) : SQLiteOpenHelper(context, "outbox.db", null, 1)
+class LocalStore(context: Context, private val vault: Vault, databaseName: String = "outbox.db") : SQLiteOpenHelper(context, databaseName, null, 1)
 {
     private val directory = context.filesDir
 
@@ -19,9 +19,10 @@ class LocalStore(context: Context, private val vault: Vault) : SQLiteOpenHelper(
     override fun onConfigure(db: SQLiteDatabase)
     {
         db.setForeignKeyConstraintsEnabled(true)
-        db.execSQL("PRAGMA synchronous=FULL")
+        db.execPerConnectionSQL("PRAGMA synchronous=FULL", null)
         // This PRAGMA returns a row; Android's execSQL rejects row-returning statements.
-        db.rawQuery("PRAGMA wal_autocheckpoint=256", null).use {
+        db.execPerConnectionSQL("PRAGMA wal_autocheckpoint=256", null)
+        db.rawQuery("PRAGMA wal_autocheckpoint", null).use {
             check(it.moveToFirst() && it.getInt(0) == 256) { "Could not configure WAL checkpoint interval" }
         }
     }
@@ -205,9 +206,58 @@ class LocalStore(context: Context, private val vault: Vault) : SQLiteOpenHelper(
     }
 
     @Synchronized
-    fun hasPendingOtherOwner(owner: String): Boolean
+    fun ownerStats(owner: String): Pair<Long, Long> {
+        readableDatabase.rawQuery("SELECT COALESCE(SUM(size_bytes),0),COUNT(*) FROM samples JOIN runs ON samples.run_id=runs.id WHERE owner=?", arrayOf(owner)).use {
+            check(it.moveToFirst())
+            return Pair(it.getLong(0), it.getLong(1))
+        }
+    }
+
+    /** Rebind only the installation's unbound local data. AAD and ciphertext change atomically. */
+    @Synchronized
+    fun adoptLocal(source: String, destination: String) {
+        require(source.startsWith("local:") && !destination.startsWith("local:") && destination.matches(Regex("[a-f0-9]{64}")))
+        check(directory.usableSpace >= queueStats().first * 2 + 64L * 1024 * 1024) { "Insufficient free space for an atomic transfer" }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.rawQuery("SELECT 1 FROM runs WHERE owner=? AND closed=0",arrayOf(source)).use { check(!it.moveToFirst()) { "Close local recording sessions before transferring" } }
+            val runIds=mutableListOf<String>()
+            db.rawQuery("SELECT id FROM runs WHERE owner=?",arrayOf(source)).use { while(it.moveToNext()) runIds.add(it.getString(0)) }
+            // Snapshot IDs first: changing an owner must not shift later CursorWindow offsets.
+            for(id in runIds) {
+                db.rawQuery("SELECT metadata FROM runs WHERE id=? AND owner=?",arrayOf(id,source)).use { runs ->
+                    check(runs.moveToFirst())
+                    val metadata=vault.open(runs.getBlob(0),"$source/run/$id")
+                    db.rawQuery("SELECT sequence,payload FROM samples WHERE run_id=?",arrayOf(id)).use { samples ->
+                        while(samples.moveToNext()) {
+                            val sequence=samples.getInt(0)
+                            val value=vault.open(samples.getBlob(1),"$source/sample/$id/$sequence")
+                            val sealed=vault.seal(value,"$destination/sample/$id/$sequence")
+                            db.update("samples",ContentValues().apply { put("payload",sealed);put("size_bytes",sealed.size) },"run_id=? AND sequence=?",arrayOf(id,sequence.toString()))
+                        }
+                    }
+                    db.update("runs",ContentValues().apply { put("owner",destination);put("metadata",vault.seal(metadata,"$destination/run/$id")) },"id=?",arrayOf(id))
+                }
+            }
+            val reportIds=mutableListOf<String>()
+            db.rawQuery("SELECT id FROM reports WHERE owner=?",arrayOf(source)).use { while(it.moveToNext()) reportIds.add(it.getString(0)) }
+            for(id in reportIds) {
+                db.rawQuery("SELECT payload FROM reports WHERE id=? AND owner=?",arrayOf(id,source)).use {
+                    check(it.moveToFirst())
+                    val plaintext=vault.open(it.getBlob(0),"$source/report/$id")
+                    db.update("reports",ContentValues().apply { put("owner",destination);put("payload",vault.seal(plaintext,"$destination/report/$id")) },"id=?",arrayOf(id))
+                }
+            }
+            db.execSQL("UPDATE counters SET bytes=(SELECT COALESCE(SUM(size_bytes),0) FROM samples),samples=(SELECT COUNT(*) FROM samples) WHERE id=1")
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    @Synchronized
+    fun hasPendingOtherOwner(owner: String, unboundLocalOwner: String = ""): Boolean
     {
-        readableDatabase.rawQuery("SELECT 1 FROM runs WHERE owner<>? UNION ALL SELECT 1 FROM reports WHERE owner<>? LIMIT 1", arrayOf(owner, owner)).use { return it.moveToFirst() }
+        readableDatabase.rawQuery("SELECT 1 FROM runs WHERE owner<>? AND owner<>? UNION ALL SELECT 1 FROM reports WHERE owner<>? AND owner<>? LIMIT 1", arrayOf(owner, unboundLocalOwner, owner, unboundLocalOwner)).use { return it.moveToFirst() }
     }
 
     @Synchronized

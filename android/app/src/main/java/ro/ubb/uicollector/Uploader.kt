@@ -36,7 +36,7 @@ class Uploader(private val app: RecorderApp)
         val reply = request(normalized.toString(), "v1/auth/login", body, null)
         reply.put("server", normalized.toString())
         val owner = ownerKey(reply)
-        check(app.store.hasPendingOtherOwner(owner) == false) { "Queued data belongs to another account/server. Sign in to that account to upload it, or explicitly delete it first." }
+        check(app.store.hasPendingOtherOwner(owner, app.localOwner) == false) { "Queued data belongs to another account/server. Sign in to that account to upload it, or explicitly delete it first." }
         app.vault.saveIdentity(reply)
         retryNow()
         app.uploadStatus = "Signed in as ${reply.getString("username")}" 

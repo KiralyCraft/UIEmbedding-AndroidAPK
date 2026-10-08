@@ -19,6 +19,25 @@ import kotlin.math.sqrt
 class GpuParityInstrumentedTest
 {
     @Test
+    fun allNineSyntheticFullScreensMatchTrainedCheckpoint() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        EmbeddingEngine(instrumentation.targetContext).use { engine ->
+            val inputBytes=instrumentation.context.assets.open("synthetic_inputs.bin").use { it.readBytes() }
+            val expectedBytes=ByteBuffer.wrap(instrumentation.context.assets.open("synthetic_embeddings.bin").use { it.readBytes() }).order(ByteOrder.LITTLE_ENDIAN)
+            val input=ByteBuffer.allocateDirect(800*384*3*4).order(ByteOrder.nativeOrder())
+            var minimum=1.0
+            repeat(9) { index ->
+                input.rewind();input.put(inputBytes,index*input.capacity(),input.capacity());input.rewind()
+                val expected=FloatArray(384) { expectedBytes.float }
+                val actual=engine.encode(input)
+                minimum=minOf(minimum,cosine(actual,expected))
+                assertTrue("Input $index cosine=$minimum",minimum>=.9999)
+            }
+            Log.i("UICollectorInference","Full OpenCL encoder passed all nine synthetic screens; minimum cosine=$minimum")
+        }
+    }
+
+    @Test
     fun trainedF6GoldenInputMatchesOnActualGpu()
     {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -55,6 +74,7 @@ class GpuParityInstrumentedTest
                     assertTrue("Repeated GPU parity cosine=$minimumCosine", minimumCosine >= 0.9999)
                     val report = JSONObject()
                         .put("model_id", engine.modelId)
+                        .put("backend",engine.backend)
                         .put("device", Build.MODEL)
                         .put("android_sdk", Build.VERSION.SDK_INT)
                         .put("input", "synthetic_export_golden")

@@ -63,6 +63,10 @@ class FrameSample(StrictModel):
     preprocess_ms: float = Field(ge=0, le=60000)
     inference_ms: float = Field(ge=0, le=60000)
     head_ms: float = Field(ge=0, le=60000)
+    processing_backend: Literal["litert_gpu_backbone_cpu_head", "litert_opencl_full_encoder"] = "litert_gpu_backbone_cpu_head"
+    preprocessing_backend: Literal["opencv_cpu", "opencl"] = "opencv_cpu"
+    capture_source: Literal["media_projection", "accessibility"] = "media_projection"
+    sampling_mode: Literal["MAXIMUM_DETAIL", "BALANCED", "BATTERY_SAVER"] = "MAXIMUM_DETAIL"
     thermal_status: int = Field(ge=0, le=6)
     embedding_b64: str = Field(min_length=2048, max_length=2048)
 
@@ -129,7 +133,9 @@ class BenchmarkReport(StrictModel):
     device_id: UUID
     model_id: str = Field(pattern=r"^[a-f0-9]{64}$")
     wall_ms: int = Field(ge=946684800000, le=4102444800000)
-    backend: Literal["litert_gpu_backbone_cpu_head"]
+    backend: Literal["litert_gpu_backbone_cpu_head", "litert_opencl_full_encoder"]
+    preprocessing_backend: Literal["opencv_cpu", "opencl"] = "opencv_cpu"
+    capture_source: Literal["media_projection", "accessibility"] = "media_projection"
     gpu_parity_cosine: float = Field(ge=-1, le=1.001)
     selected_fps: float = Field(gt=0, le=120)
     thermal_status: int = Field(ge=0, le=6)
