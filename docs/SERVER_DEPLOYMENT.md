@@ -48,6 +48,32 @@ The console shows upload receipt times, committed embeddings, total/complete run
 
 ## Reproduction and updates
 
+### Android app downloads
+
+The **Android app** panel is available to every signed-in, active participant and administrator. Both release metadata and the APK download require a valid web session; anonymous requests, revoked sessions, disabled accounts and Android API bearer tokens cannot download it. Downloads do not grant access to another participant's data.
+
+`APK_RELEASE_DIR` selects a release bundle containing `collector.apk` and `release.json`. On this guest it is `/opt/uiembeddings/android-release/current`. APK binaries remain outside Git. The publisher reads the version, package, minimum Android SDK and ABI directly from the APK using the Android SDK's `aapt2`, calculates its SHA-256, and stores those details with the changelog. The changelog describes only the changes from the previous version.
+
+After building and validating a new APK, create `android/releases/<version>.json`, a JSON array of short changelog entries, and prepare the bundle on the workstation:
+
+```bash
+python3 deploy/publish-apk.py \
+  --apk android/app/build/outputs/apk/debug/app-debug.apk \
+  --release-root exports/android-release \
+  --changelog android/releases/1.1.2.json \
+  --aapt /home/kiralycraft/Android/Sdk/build-tools/35.0.0/aapt2
+```
+
+For native deployment, copy the generated version directory into `/opt/uiembeddings/android-release/` with directories mode 0755 and files mode 0644, verify its APK checksum on the guest, then replace the `current` symlink atomically (create a temporary relative symlink and rename it over `current` on the same filesystem). Set `APK_RELEASE_DIR` in `/etc/uiembeddings/server.env` and restart the service once when first enabling downloads. Later APK publications need no restart. Docker Compose mounts `exports/android-release` read-only and uses its `current` symlink directly.
+
+Switching the symlink replaces the presented APK, version and changelog together. Older bundles are retained for rollback, but have no public route; remove them only when no download is using them. The download link carries the displayed checksum: if a publication occurs before the user clicks it, the server asks them to refresh instead of silently delivering a different version. Missing or incomplete bundles show a retryable unavailable message. The web panel refreshes release information when opened and during its normal periodic refresh.
+
+Verify anonymous download denial, participant access, public HTTPS download headers and a full APK checksum after each publication. Install an update over the existing app using the same signing key to preserve accounts and device identities.
+
+The download update was validated on 2026-10-09 with 61 server tests on SQLite and isolated MariaDB, plus live participant/admin access and anonymous denial through public HTTPS. The complete v1.1.2 download matched the installed APK's SHA-256; HEAD and partial downloads also passed. Browser checks covered the separate panel at desktop and 390-pixel phone widths.
+
+### Server updates
+
 `deploy/provision-proxmox.sh` records the reviewed creation of VM 206. It refuses an existing VM ID. It expects the official Debian 13 genericcloud image and its `SHA512SUMS` under `/var/lib/vz/template/uiembeddings`, verifies the checksum, copies only BusOSINT's public SSH key, and creates a fresh guest; it does not clone BusOSINT's application or data. Debian images are available from [Debian's cloud image service](https://cloud.debian.org/images/cloud/trixie/latest/).
 
 For a fresh dedicated guest, copy `server/`, `deploy/`, and the validated F6 manifest to `/opt/uiembeddings` (manifest filename `f6_manifest.json`), then run `sudo bash /opt/uiembeddings/deploy/install-debian.sh`. The installer generates database credentials once and installs the native services. Its nftables configuration is for this dedicated VM and replaces that VM's ruleset. `deploy/apache-uiembeddings.ext` and `deploy/openwrt-uiembeddings.conf` record the additions for the existing proxy and router; append only to the appropriate configuration sections, validate, then reload.

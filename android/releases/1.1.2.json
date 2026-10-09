@@ -1,0 +1,5 @@
+[
+  "Capture full screens while the keyboard is open, keeping the label of the app you are typing in.",
+  "Capture the notification drawer and other system overlays, then resume the app view when they close.",
+  "Keep excluded apps private when multiple app windows or overlays are visible."
+]

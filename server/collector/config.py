@@ -15,6 +15,7 @@ class Settings:
     login_ip_long_seconds: int = 900
     root_path: str = ""
     secure_cookies: bool = True
+    apk_release_dir: str = ""
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -22,4 +23,5 @@ class Settings:
             database_url=os.environ.get("DATABASE_URL", "sqlite:///collector-development.db"),
             token_days=int(os.environ.get("TOKEN_DAYS", "90")),
             root_path=os.environ.get("ROOT_PATH", "").rstrip("/"),
+            apk_release_dir=os.environ.get("APK_RELEASE_DIR", ""),
         )

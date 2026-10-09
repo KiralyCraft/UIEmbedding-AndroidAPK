@@ -35,7 +35,8 @@
         <p class="eyebrow">COLLECTION CONSOLE</p>
         <nav>
           <button data-page="overview" class="selected">Overview</button
-          ><button data-page="people">People &amp; devices</button>
+          ><button data-page="people">People &amp; devices</button
+          ><button data-page="android-app">Android app</button>
         </nav>
         <div class="account">
           <span id="identity"></span
@@ -93,6 +94,28 @@
         <section id="device-page" hidden>
           <button id="back" class="secondary">← All people</button>
           <div id="devices"></div>
+        </section>
+        <section id="android-app" hidden>
+          <article>
+            <h2>UI Embedding Collector</h2>
+            <p>
+              Download the latest app on your Android phone, then sign in from
+              its server menu using your participant account.
+            </p>
+            <p id="apk-status" role="status">Loading the current release…</p>
+            <div id="apk-release" hidden>
+              <p><strong id="apk-version"></strong></p>
+              <p id="apk-details" class="muted"></p>
+              <a id="apk-download" class="button" download>Download APK</a>
+              <p class="muted">
+                To update, install over your existing app to preserve your
+                account, device identity and settings. Android may ask you to
+                allow installation from your browser.
+              </p>
+              <h2>What changed</h2>
+              <ul id="apk-changelog" class="changelog"></ul>
+            </div>
+          </article>
         </section>
       </main>
     </div>

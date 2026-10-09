@@ -18,7 +18,7 @@ password=secrets.token_hex(32)
 sql="CREATE DATABASE uiembeddings CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\nCREATE USER 'uiembeddings'@'127.0.0.1' IDENTIFIED BY '"+password+"';\nGRANT ALL PRIVILEGES ON uiembeddings.* TO 'uiembeddings'@'127.0.0.1';\n"
 subprocess.run(['mariadb'], input=sql, text=True, check=True)
 p=pathlib.Path('/etc/uiembeddings/server.env')
-p.write_text('DATABASE_URL=mysql+pymysql://uiembeddings:'+password+'@127.0.0.1:3306/uiembeddings?charset=utf8mb4\nROOT_PATH=/projects/uiembeddings\nTOKEN_DAYS=90\nPYTHONDONTWRITEBYTECODE=1\n')
+p.write_text('DATABASE_URL=mysql+pymysql://uiembeddings:'+password+'@127.0.0.1:3306/uiembeddings?charset=utf8mb4\nROOT_PATH=/projects/uiembeddings\nTOKEN_DAYS=90\nAPK_RELEASE_DIR=/opt/uiembeddings/android-release/current\nPYTHONDONTWRITEBYTECODE=1\n')
 p.chmod(0o640)
 PY
     chown root:uiembeddings /etc/uiembeddings/server.env

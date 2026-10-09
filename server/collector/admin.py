@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import Field
 from sqlalchemy import Integer, delete, func, select, update
@@ -17,6 +17,7 @@ from sqlalchemy.orm import aliased, sessionmaker
 from .config import Settings
 from .db import AccountCreation, Administrator, Benchmark, Device, Run, Sample, Token, User
 from .schemas import Login, StrictModel
+from .releases import load_release
 from .security import authenticate, digest, now_ms, password_hash
 
 COOKIE = "uiembeddings_session"
@@ -75,6 +76,18 @@ def install_admin(app: FastAPI, config: Settings, sessions: sessionmaker, login:
         if name not in ("admin.js", "admin.css"):
             raise HTTPException(404)
         return FileResponse(STATIC / name)
+
+    @app.get("/account/android-release")
+    def android_release(owner: str = Depends(browser_user)) -> dict:
+        manifest = load_release(config.apk_release_dir).manifest
+        return {**manifest.model_dump(mode="json"), "download_path": "account/android-apk?sha256=" + manifest.sha256}
+
+    @app.api_route("/account/android-apk", methods=["GET", "HEAD"], include_in_schema=False)
+    def download_android_apk(owner: str = Depends(browser_user), sha256: str | None = Query(default=None, pattern=r"^[a-f0-9]{64}$")) -> FileResponse:
+        release = load_release(config.apk_release_dir)
+        if sha256 is not None and sha256 != release.manifest.sha256:
+            raise HTTPException(409, "A newer Android app is available. Refresh the Android app panel and download again.")
+        return FileResponse(release.apk_path, media_type="application/vnd.android.package-archive", filename="UIEmbedding-Collector-" + release.manifest.version_name + ".apk")
 
     @app.post("/admin/login", dependencies=[Depends(login_guard)])
     def web_login(body: Login, request: Request, response: Response) -> dict:

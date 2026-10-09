@@ -22,6 +22,7 @@ services:
     environment:
       DATABASE_URL: mysql+pymysql://collector:${MYSQL_PASSWORD}@mysql:3306/collector?charset=utf8mb4
       TOKEN_DAYS: 90
+      APK_RELEASE_DIR: /android-release/current
       FORWARDED_ALLOW_IPS: ${TRUSTED_PROXY_IPS:-127.0.0.1}
     ports:
       - "127.0.0.1:8000:8000"
@@ -29,6 +30,7 @@ services:
       mysql:
         condition: service_healthy
     volumes:
+      - ./exports/android-release:/android-release:ro
       - ./android/app/src/main/assets:/models:ro
       - ./exports:/exports
     security_opt:

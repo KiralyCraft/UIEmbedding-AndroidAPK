@@ -61,6 +61,8 @@ The controlled capture helper grants only collector prerequisites, preserves oth
 
 The deployed administrator console and capture endpoint are [kiralycraft.com/projects/uiembeddings](https://kiralycraft.com/projects/uiembeddings/). See [deployment and administration](docs/SERVER_DEPLOYMENT.md) for the Debian VM, user/device management, operations and validation.
 
+Signed-in users can download the current APK under **Android app**, with its version and a short changelog. See [publishing an APK](docs/SERVER_DEPLOYMENT.md#android-app-downloads) to replace the APK, version and release notes together.
+
 ```bash
 cp .env.example .env
 # Set independent MYSQL_PASSWORD and MYSQL_ROOT_PASSWORD secrets.

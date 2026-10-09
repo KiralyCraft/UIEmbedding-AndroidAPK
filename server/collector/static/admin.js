@@ -57,9 +57,11 @@ function showLogin() {
   csrf = "";
   $("dashboard").hidden = true;
   $("signin").hidden = false;
+  $("apk-release").hidden = true;
+  $("apk-download").removeAttribute("href");
 }
 function page(name) {
-  for (const id of ["overview", "people", "device-page"])
+  for (const id of ["overview", "people", "device-page", "android-app"])
     $(id).hidden = id !== name;
   document
     .querySelectorAll("nav button")
@@ -69,7 +71,29 @@ function page(name) {
       ? "Overview"
       : name === "people"
         ? "People & devices"
-        : selected.username + " · Devices";
+        : name === "android-app"
+          ? "Android app"
+          : selected.username + " · Devices";
+}
+async function refreshRelease() {
+  try {
+    const release = await api("account/android-release");
+    $("apk-version").textContent = "Version " + release.version_name;
+    $("apk-details").textContent =
+      (release.size_bytes / 1024 / 1024).toFixed(1) + " MB · " +
+      (release.minimum_sdk === 30 ? "Android 11 or newer" : "Android API " + release.minimum_sdk + " or newer");
+    $("apk-download").href = new URL(release.download_path, base).href;
+    $("apk-changelog").replaceChildren(
+      ...release.changelog.map((note) => element("li", note)),
+    );
+    $("apk-status").hidden = true;
+    $("apk-release").hidden = false;
+  } catch (e) {
+    $("apk-release").hidden = true;
+    $("apk-download").removeAttribute("href");
+    $("apk-status").textContent = e.message;
+    $("apk-status").hidden = false;
+  }
 }
 function stats(container, values) {
   container.replaceChildren();
@@ -188,6 +212,7 @@ async function refresh() {
   );
   $("updated").textContent = "Updated " + new Date().toLocaleTimeString();
   if (selected && !$("device-page").hidden) await openDevices(selected);
+  if (!$("android-app").hidden) await refreshRelease();
 }
 async function openDevices(user) {
   selected = user;
@@ -390,6 +415,7 @@ document.querySelectorAll("[data-page]").forEach(
     (b.onclick = () => {
       selected = null;
       page(b.dataset.page);
+      if (b.dataset.page === "android-app") refreshRelease();
     }),
 );
 api("admin/session")
