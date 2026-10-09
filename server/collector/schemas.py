@@ -47,6 +47,12 @@ class RunMetadata(StrictModel):
         return self
 
 
+class WindowContext(StrictModel):
+    screen_kind: Literal["application", "system_overlay"]
+    keyboard_visible: bool
+    visible_packages: list[Annotated[str, Field(min_length=1, max_length=255, pattern=r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")]] = Field(max_length=64)
+
+
 class FrameSample(StrictModel):
     sequence: int = Field(ge=0, le=2147483646)
     wall_ms: int = Field(ge=946684800000, le=4102444800000)
@@ -55,6 +61,7 @@ class FrameSample(StrictModel):
     activity: str | None = Field(default=None, max_length=512)
     activity_source: Literal["usage_stats", "unknown"]
     window_class: str | None = Field(default=None, max_length=512)
+    window_context: WindowContext | None = None
     label_age_ms: int = Field(ge=0, le=9223372036854775807)
     source_width: int = Field(ge=1, le=32768)
     source_height: int = Field(ge=1, le=32768)

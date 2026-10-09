@@ -13,7 +13,7 @@ import android.view.accessibility.AccessibilityWindowInfo
 import android.graphics.Rect
 
 /** Never contains screen text or a view hierarchy. */
-data class AppLabel(val packageName: String, val activity: String?, val windowClass: String?, val generation: Long, val ageMs: Long, val settled: Boolean)
+data class AppLabel(val packageName: String, val activity: String?, val windowClass: String?, val generation: Long, val ageMs: Long, val settled: Boolean, val windowContext: CaptureWindowContext = CaptureWindowContext())
 
 /** Tracks the currently bound service instance so stale lifecycle callbacks are harmless. */
 class AccessibilityConnectionState
@@ -46,6 +46,7 @@ class LabelTracker(private val context: Context)
     private var windowPackage: String? = null
     private var windowClass: String? = null
     private var windowId = -1
+    private var windowContext = CaptureWindowContext()
     private var unsafeReason: String? = "Accessibility labeling not connected"
     private var usagePackage: String? = null
     private var usageActivity: String? = null
@@ -74,6 +75,7 @@ class LabelTracker(private val context: Context)
             windowPackage = null
             windowClass = null
             windowId = -1
+            windowContext = CaptureWindowContext()
             unsafeReason = if (value) "Waiting for an accessibility window event" else "Accessibility labeling not connected"
             status = if (value) "Waiting for a foreground window event" else "Accessibility service disconnected"
             changed()
@@ -81,9 +83,10 @@ class LabelTracker(private val context: Context)
     }
 
     @Synchronized
-    fun windowState(token: Any, packageName: String?, className: String?, eventWindowId: Int, focusedWindowId: Int, reason: String?)
+    fun windowState(token: Any, packageName: String?, className: String?, eventWindowId: Int, focusedWindowId: Int, reason: String?, context: CaptureWindowContext = CaptureWindowContext())
     {
         if (!connectionState.owns(token)) { return }
+        if(windowContext != context) { windowContext=context; changed() }
         if (windowId != focusedWindowId || unsafeReason != reason)
         {
             windowId = focusedWindowId
@@ -163,10 +166,11 @@ class LabelTracker(private val context: Context)
         if (unsafeReason != null) { status = unsafeReason!!; return null }
         val pkg = windowPackage
         if (pkg == null) { status = "Waiting for a foreground window event"; return null }
-        if (usagePackage != null && usagePackage != pkg) { status = "Foreground sources disagree"; return null }
+        // Accessibility identifies the visible screen. Usage events can lag or keep the
+        // underlying Activity resumed while System UI is on top; only use matching Activity labels.
         val age = (SystemClock.elapsedRealtime() - changedAt).coerceAtLeast(0L)
         status = pkg
-        return AppLabel(pkg, if (usagePackage == pkg) usageActivity else null, windowClass, generation, age, age >= 300L)
+        return AppLabel(pkg, if (usagePackage == pkg) usageActivity else null, windowClass, generation, age, age >= 300L, windowContext)
     }
 
     private fun changed()
@@ -204,26 +208,28 @@ class LabelAccessibilityService : AccessibilityService()
             it.getBoundsInScreen(bounds)
             bounds.isEmpty == false
         }
-        val applications = visible.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
-        val focused = applications.firstOrNull { it.isFocused && it.isActive }
-        val keyboard = visible.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
-        val systemOverlay = visible.any { it.type == AccessibilityWindowInfo.TYPE_SYSTEM && it.isFocused }
-        val reason = when
-        {
-            keyboard -> "Keyboard visible; collection paused"
-            systemOverlay -> "System overlay visible; collection paused"
-            applications.size != 1 -> "Multiple or no application windows; collection paused"
-            focused == null -> "No unambiguous focused app window"
-            else -> null
+        val descriptors=visible.map { window ->
+            val root=window.root
+            val rootPackage=root?.packageName?.toString()
+            @Suppress("DEPRECATION")
+            root?.recycle()
+            val sameWindow=event?.windowId==window.id
+            val isState=event?.eventType==AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+            VisibleWindow(window.id,when(window.type) {
+                AccessibilityWindowInfo.TYPE_APPLICATION -> WindowKind.APPLICATION
+                AccessibilityWindowInfo.TYPE_INPUT_METHOD -> WindowKind.INPUT_METHOD
+                AccessibilityWindowInfo.TYPE_SYSTEM -> WindowKind.SYSTEM
+                AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY -> WindowKind.ACCESSIBILITY_OVERLAY
+                else -> WindowKind.OTHER
+            },window.layer,window.isFocused,window.isActive,
+                rootPackage ?: if(isState && sameWindow) event?.packageName?.toString() else null,
+                if(isState && sameWindow) event?.className?.toString()?.take(512) else null)
         }
-        val isState = event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-        val root = focused?.root
-        val focusedPackage = root?.packageName?.toString()
-        @Suppress("DEPRECATION")
-        root?.recycle()
-        val sameWindow = event?.windowId == focused?.id
-        val packageName = focusedPackage ?: if (isState && sameWindow) event?.packageName?.toString() else null
-        app.labels.windowState(this, packageName, if (isState && sameWindow) event?.className?.toString()?.take(512) else null, focused?.id ?: -1, focused?.id ?: -1, reason)
+        val resolved=resolveCaptureWindow(descriptors)
+        val primary=resolved?.primary
+        app.labels.windowState(this, primary?.packageName, primary?.className, primary?.id ?: -1, primary?.id ?: -1,
+            if(primary==null) "Waiting for an identifiable foreground screen" else null, resolved?.context ?: CaptureWindowContext())
+
     }
 
     // Android interrupts feedback without unbinding the service (for example when

@@ -226,3 +226,35 @@ def test_calibration_report_supports_adaptive_and_legacy_retries(system, adaptiv
         assert response.status_code == 200, response.text
     body["results"][0]["target_fps"] = 5.0
     assert system["client"].post("/v1/benchmarks", json=body, headers=system["headers"]).status_code == 409
+
+
+def test_window_context_is_retained_and_legacy_retry_hashes_stay_compatible(system, payload):
+    import base64
+    import hashlib
+    import json
+    from collector.api import canonical
+    from collector.db import Sample
+    from collector.schemas import FrameSample
+    client=system['client']
+    legacy=FrameSample.model_validate(payload['samples'][0]).model_dump(mode='json')
+    legacy.pop('window_context')
+    raw=base64.b64decode(legacy.pop('embedding_b64'))
+    expected=hashlib.sha256(canonical(legacy).encode()+raw).hexdigest()
+    assert client.post('/v1/ingest',headers=system['headers'],json=payload).status_code==200
+    with system['app'].state.sessions() as session:
+        sample=session.get(Sample,(payload['run']['id'],0))
+        assert sample.payload_sha256==expected
+        assert 'window_context' not in json.loads(sample.metadata_json)
+    assert client.post('/v1/ingest',headers=system['headers'],json=payload).status_code==200
+    import copy,uuid
+    newer=copy.deepcopy(payload)
+    newer['run']['id']=str(uuid.uuid4())
+    context={'screen_kind':'application','keyboard_visible':True,'visible_packages':['com.termux.x11','com.example.keyboard']}
+    newer['samples'][0]['window_context']=context
+    assert client.post('/v1/ingest',headers=system['headers'],json=newer).status_code==200
+    with system['app'].state.sessions() as session:
+        sample=session.get(Sample,(newer['run']['id'],0))
+        assert json.loads(sample.metadata_json)['window_context']==context
+    assert client.post('/v1/ingest',headers=system['headers'],json=newer).status_code==200
+    newer['samples'][0]['window_context']['screen_kind']='system_overlay'
+    assert client.post('/v1/ingest',headers=system['headers'],json=newer).status_code==409

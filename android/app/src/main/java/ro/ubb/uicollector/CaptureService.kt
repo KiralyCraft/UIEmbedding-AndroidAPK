@@ -232,7 +232,7 @@ class CaptureService : Service()
             app.captureStatus="Recording stopped: a required permission was revoked"
             stopSelf();return
         }
-        if(!capture.unlocked() || (calibration==null && (before==null || !allowed(before.packageName)))) {
+        if(!capture.unlocked() || (calibration==null && (before==null || !allowed(before)))) {
             closeRun(if(!capture.unlocked()) "screen_locked" else "ambiguous_or_excluded_app")
             preprocessor?.clear();pendingFrame=false;capture.reset()
             app.captureStatus=if(!capture.unlocked()) "Screen locked/off · recording resumes after unlock" else waitingForApp(before)
@@ -300,7 +300,7 @@ class CaptureService : Service()
             val quota = observedSettings.quotaMb * 1024 * 1024
             app.thermalStatus=thermal
             if (quotaPaused && app.store.queueStats().first < quota * 8 / 10 && filesDir.usableSpace >= 128L * 1024 * 1024) { quotaPaused = false }
-            val labelEligible = label != null && allowed(label.packageName)
+            val labelEligible = label != null && allowed(label)
             val changed = label != null && label.generation != lastGeneration
             if (changed)
             {
@@ -354,7 +354,7 @@ class CaptureService : Service()
                 processor.clear()
                 app.captureStatus = "PAUSED: device critically hot; automatic retry while projection remains active"
             }
-            else if (label == null || allowed(label.packageName) == false)
+            else if (label == null || allowed(label) == false)
             {
                 paused=true
                 closeRun(if (label == null) "ambiguous_or_hidden_app" else "app_excluded")
@@ -382,7 +382,7 @@ class CaptureService : Service()
                 {
                     if (runId == null) { startRun(label.packageName, frameWall, frameNs) }
                     app.activePackage=label.packageName
-                    val sample = JSONObject().put("sequence", sequence).put("wall_ms", frameWall).put("elapsed_ns", frameNs).put("image_timestamp_ns", processor.imageTimestampNs).put("activity", label.activity ?: JSONObject.NULL).put("activity_source", if (label.activity == null) "unknown" else "usage_stats").put("window_class", label.windowClass ?: JSONObject.NULL).put("label_age_ms", label.ageMs).put("source_width", processor.sourceWidth).put("source_height", processor.sourceHeight).put("rotation", rotation()).put("target_fps", target).put("preprocess_ms", processor.processingMs).put("inference_ms", model.inferenceMs).put("head_ms", model.headMs).put("processing_backend",model.backend).put("preprocessing_backend",processor.backend).put("capture_source",source.name.lowercase()).put("sampling_mode",observedSettings.mode.name).put("thermal_status", thermal).put("embedding_b64", vectorBase64(vector))
+                    val sample = JSONObject().put("sequence", sequence).put("wall_ms", frameWall).put("elapsed_ns", frameNs).put("image_timestamp_ns", processor.imageTimestampNs).put("activity", label.activity ?: JSONObject.NULL).put("activity_source", if (label.activity == null) "unknown" else "usage_stats").put("window_class", label.windowClass ?: JSONObject.NULL).put("window_context",JSONObject().put("screen_kind",label.windowContext.screenKind).put("keyboard_visible",label.windowContext.keyboardVisible).put("visible_packages",org.json.JSONArray(label.windowContext.visiblePackages))).put("label_age_ms", label.ageMs).put("source_width", processor.sourceWidth).put("source_height", processor.sourceHeight).put("rotation", rotation()).put("target_fps", target).put("preprocess_ms", processor.processingMs).put("inference_ms", model.inferenceMs).put("head_ms", model.headMs).put("processing_backend",model.backend).put("preprocessing_backend",processor.backend).put("capture_source",source.name.lowercase()).put("sampling_mode",observedSettings.mode.name).put("thermal_status", thermal).put("embedding_b64", vectorBase64(vector))
                     if (app.store.append(runId!!, owner, sample, quota))
                     {
                         sequence += 1
@@ -448,13 +448,12 @@ class CaptureService : Service()
         app.requestUpload()
     }
 
-    private fun allowed(packageName: String): Boolean = observedSettings.allows(packageName,this.packageName)
+    private fun allowed(label: AppLabel): Boolean = observedSettings.allowsScreen(label.packageName,label.windowContext.visiblePackages,this.packageName)
 
     private fun waitingForApp(label: AppLabel?): String = when(label?.packageName) {
         packageName -> "Ready · open another app to record. The collector does not record its own screen."
-        "android", "com.android.systemui" -> "Paused on a system screen · open an included app to resume recording."
         null -> if(!app.labels.isConnected()) "Accessibility disconnected · reconnect the collector in Accessibility settings." else "Paused · ${app.labels.status}"
-        else -> "Paused · this app is excluded. Open another app or change your Applications settings."
+        else -> "Paused · a visible app is excluded. Change your Applications settings or hide that app."
     }
 
     private fun startRun(packageName: String, wallMs: Long, elapsedNs: Long)

@@ -9,7 +9,7 @@ class RecordingStateTest {
         assertTrue(settings.allows("com.example.installed_later","ro.ubb.uicollector"))
         assertFalse(settings.allows("com.example.excluded","ro.ubb.uicollector"))
         assertFalse(settings.allows("ro.ubb.uicollector","ro.ubb.uicollector"))
-        assertFalse(settings.allows("com.android.systemui","ro.ubb.uicollector"))
+        assertTrue(settings.allows("com.android.systemui","ro.ubb.uicollector"))
         assertFalse(RecordingSettings(policy=CapturePolicy.LEGACY_SELECTED,legacySelected=setOf("com.example.a")).allows("com.example.b","ro.ubb.uicollector"))
     }
     @Test fun everyRequiredPermissionGatesReadiness() {

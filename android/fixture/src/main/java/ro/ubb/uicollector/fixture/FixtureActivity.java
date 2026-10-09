@@ -15,7 +15,7 @@ public class FixtureActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         final boolean animate=getIntent().getBooleanExtra("animate",true);
         final boolean variant=getPackageName().endsWith(".b");
-        setContentView(new View(this) {
+        View pattern=new View(this) {
             final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
             int phase=0;
             @Override protected void onDraw(Canvas canvas) {
@@ -30,6 +30,20 @@ public class FixtureActivity extends Activity {
                 phase=(phase+1)%10000;
                 if(animate) postInvalidateDelayed(16);
             }
-        });
+        };
+        android.widget.FrameLayout layout=new android.widget.FrameLayout(this);
+        layout.addView(pattern,new android.widget.FrameLayout.LayoutParams(-1,-1));
+        setContentView(layout);
+        if(getIntent().getBooleanExtra("keyboard",false)) {
+            android.widget.EditText input=new android.widget.EditText(this);
+            input.setSingleLine(true);
+            input.setHint("Controlled keyboard capture test");
+            android.widget.FrameLayout.LayoutParams params=new android.widget.FrameLayout.LayoutParams(-1,140);
+            params.topMargin=200;
+            layout.addView(input,params);
+            input.requestFocus();
+            input.postDelayed(() -> ((android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE))
+                .showSoftInput(input,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT),400);
+        }
     }
 }

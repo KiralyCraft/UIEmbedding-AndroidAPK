@@ -55,3 +55,9 @@ Reboot recovery: explicit RECEIVE_BOOT_COMPLETED permission and non-exported rec
 ## Remaining scope
 
 No 24-hour endurance guarantee, unplugged energy comparison, real MySQL/proxy deployment/concurrency test, or 16-KB-page device test. Continuous mode measures the screenshot/pipeline bottleneck; Fast sessions offer a different capture path with fresh consent after lock. OEM restrictions and force-stop can still require user intervention.
+
+## Keyboard and foreground overlays — APK 1.1.2 (2026-10-09)
+
+The Xperia XQ-DQ72/API 35 now captures keyboard-visible full-display frames with their host application label. Live uploads from the controlled keyboard fixture and ordinary Termux (`com.termux`) contained `keyboard_visible=true` and unchanged 1096×2560 source dimensions. Foreground notification drawer/quick-settings uploads were labeled `com.android.systemui` with `screen_kind=system_overlay`; they did not inherit an underlying app Activity. Pixels remain transient and the encoder/preprocessing path is unchanged. Termux:X11's disconnected launcher/preferences were also captured, but no connected X11 desktop session was exercised.
+
+Android unit tests: 16 passed, covering IME focus, Termux/Termux:X11 host labels, drawer transitions, passive system bars, focused multiple-window selection, missing identities and explicit visible-app exclusions. Server suite: 51 passed on SQLite and 51 on isolated MariaDB, including old sample retry-hash compatibility and new context persistence. The compatible server update was deployed before installing the APK; no database migration was needed. Screen lock/off, protected screens, unknown identities and explicit exclusions remain pause conditions.

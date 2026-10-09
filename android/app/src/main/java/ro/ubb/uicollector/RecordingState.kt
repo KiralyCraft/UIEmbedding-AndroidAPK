@@ -23,8 +23,10 @@ data class RecordingSettings(
     val quotaMb: Long = 512
 ) {
     fun allows(packageName: String, collectorPackage: String): Boolean =
-        packageName !in setOf(collectorPackage, "android", "com.android.systemui") &&
+        packageName != collectorPackage &&
             packageName !in excluded && (policy != CapturePolicy.LEGACY_SELECTED || packageName in legacySelected)
+    fun allowsScreen(primaryPackage: String, visiblePackages: List<String>, collectorPackage: String): Boolean =
+        allows(primaryPackage, collectorPackage) && visiblePackages.none { it == collectorPackage || it in excluded }
 }
 
 enum class GrantState(val label: String) {

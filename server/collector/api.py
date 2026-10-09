@@ -250,6 +250,9 @@ def store_batch(session, body: Ingest, owner: str) -> dict:
         if effective["end_elapsed_ns"] is not None and sample.elapsed_ns > effective["end_elapsed_ns"]:
             raise HTTPException(409, "Sample follows closed run")
         payload = sample.model_dump(mode="json")
+        # Preserve hashes for retries of samples ingested before window context existed.
+        if payload.get("window_context") is None:
+            payload.pop("window_context", None)
         raw = base64.b64decode(payload.pop("embedding_b64"), validate=True)
         metadata_text = canonical(payload)
         signature = hashlib.sha256(metadata_text.encode() + raw).hexdigest()
